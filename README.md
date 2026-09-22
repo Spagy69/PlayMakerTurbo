@@ -195,6 +195,14 @@ In my game the largest single allocator was the Cheatbox++ mod at 10.9 KB per fr
 It does not speed up rendering, which the profiler puts at about 4.5 ms of an 11.6 ms frame. Shadow distance is
 the setting that moves that number the most.
 
+## How this was made
+
+The code and this documentation were written by an AI, Claude (Anthropic), working in Claude Code. I directed
+the work, decided what the patch may and may not change, ran the game and took every measurement in this
+README. The AI analysed the decompiled PlayMaker, wrote the installer, the runtime and the profiler mod, and
+fixed what my test runs turned up. Keep that in mind when you read the code, and treat it as beta for that
+reason too.
+
 ## Licence
 
 Copyright (c) 2026 Vít Machač. The code in this repository is released under the MIT licence, see
