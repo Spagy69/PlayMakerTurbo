@@ -37,6 +37,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
+    <Reference Include="System.Core" />
     <Reference Include="UnityEngine">
       <HintPath>$(ManagedPath)\UnityEngine.dll</HintPath>
       <Private>False</Private>
@@ -49,6 +50,10 @@
       <HintPath>$(ManagedPath)\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="cInput">
+      <HintPath>$(ManagedPath)\cInput.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Reference Include="0Harmony">
       <HintPath>$(ManagedPath)\0Harmony.dll</HintPath>
       <Private>False</Private>
@@ -57,6 +62,11 @@
   <ItemGroup>
     <Compile Include="PlayMakerTurboAddon.cs" />
     <Compile Include="ForceFeedbackInit.cs" />
+    <Compile Include="CInputGuiSwitch.cs" />
+    <Compile Include="IKSkipSettled.cs" />
+    <Compile Include="StatusCommand.cs" />
+    <Compile Include="CenterOfMassSkip.cs" />
+    <Compile Include="TurboSettings.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

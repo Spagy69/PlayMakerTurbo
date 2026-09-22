@@ -53,25 +53,26 @@ namespace MWCFsmProfiler
         private void Mod_ModSettings()
         {
             fullKey = Keybind.Add("toggle", "Full recording: times everything (slows the game)", KeyCode.F9);
-            lightKey = Keybind.Add("light", "Light recording: no timing patches, clean FPS / frame times / GC", KeyCode.F10);
-            traceKey = Keybind.Add("trace", "Trace: every call of the next N frames, for ui.perfetto.dev", KeyCode.F11);
+            lightKey = Keybind.Add("light", "Light recording: no patches, clean FPS / frame times", KeyCode.F10);
+            traceKey = Keybind.Add("trace", "Trace: every call of the next N frames (ui.perfetto.dev)", KeyCode.F11);
             overlayKey = Keybind.Add("overlay", "Show / hide the live overlay", KeyCode.F8);
 
             Settings.AddText("Reports are saved to Mods\\Config\\Mod Settings\\MWCFsmProfiler, one folder per recording.");
             Settings.AddButton("Open reports folder", () => System.Diagnostics.Process.Start(ModLoader.GetModSettingsFolder(this)));
             Settings.AddHeader("What a full recording measures");
+            Settings.AddText("The OnEnter/OnExit timing and write counting settings apply only before the first F9 of a game session.");
             measureMemory = Settings.AddCheckBox("measureMemory", "Allocations per call (adds overhead to every timed call)", true);
-            timeEnterExit = Settings.AddCheckBox("timeEnterExit", "Time action OnEnter/OnExit too (applies before the first F9)", true);
-            wasteDetector = Settings.AddCheckBox("wasteDetector", "Count writes that do not change anything (applies before the first F9)", true);
+            timeEnterExit = Settings.AddCheckBox("timeEnterExit", "Time action OnEnter/OnExit too", true);
+            wasteDetector = Settings.AddCheckBox("wasteDetector", "Count writes that do not change anything", true);
             spikeCapture = Settings.AddCheckBox("spikeCapture", "Keep every call of spike frames", true);
             spikeMultiplier = Settings.AddSlider("spikeMultiplier", "Spike = frame longer than this many times the recent median", 2f, 10f, 3f, null, 1);
             traceFrames = Settings.AddSlider("traceFrames", "Trace length (frames)", 60, 1000, 300);
 
-            benchKey = Keybind.Add("benchmark", "Benchmark: start / abort (stand on foot where you want to measure)", KeyCode.F12);
+            benchKey = Keybind.Add("benchmark", "Benchmark: start / abort (stand on foot)", KeyCode.F12);
             Settings.AddHeader("Benchmark (F12)");
             Settings.AddText("Locks the player and view, stops game time and weather, removes traffic, warms up 5 s, then measures. Use a COPY of your save and do not save afterwards.");
-            benchKind = Settings.AddDropDownList("benchKind", "What to measure", new[] { "A/B: each checked Turbo option off vs on", "A/A: method check (switches nothing)", "Baseline session (compare with the previous one after a restart)" }, 0);
-            freezeTraffic = Settings.AddCheckBox("freezeTraffic", "Remove traffic, NPC cars and the train during the benchmark (less noise)", true);
+            benchKind = Settings.AddDropDownList("benchKind", "What to measure", new[] { "A/B: each checked Turbo option off vs on", "A/A: method check (switches nothing)", "Baseline session (compare after a restart)" }, 0);
+            freezeTraffic = Settings.AddCheckBox("freezeTraffic", "Remove traffic, NPC cars and the train (less noise)", true);
             blockSeconds = Settings.AddSlider("blockSeconds", "Block length (s)", 5, 30, 10);
             minPairs = Settings.AddSlider("minPairs", "Minimum off/on pairs per option", 4, 20, 8);
             maxPairs = Settings.AddSlider("maxPairs", "Maximum off/on pairs per option", 8, 40, 20);

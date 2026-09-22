@@ -71,6 +71,11 @@ namespace PlayMakerTurboAddon
             initialised = true;
         }
 
+        public static string Summary()
+        {
+            return "Force feedback: " + (!patched ? "off" : initialised ? "set up once, cars reuse it" : "not set up yet, the first car will do it");
+        }
+
         public static bool Prefix(ForceFeedback __instance)
         {
             if (!initialised)
