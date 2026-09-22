@@ -27,4 +27,29 @@ namespace PlayMakerTurbo
             return (Action<T>)method.CreateDelegate(typeof(Action<T>));
         }
     }
+
+    // The same for instance fields: FieldInfo.GetValue/SetValue box the value on every call, these do not.
+    internal static class InstanceField
+    {
+        public static Func<TTarget, TValue> Getter<TTarget, TValue>(FieldInfo field)
+        {
+            DynamicMethod method = new DynamicMethod("get_" + field.Name, typeof(TValue), new[] { typeof(TTarget) }, field.DeclaringType, true);
+            ILGenerator il = method.GetILGenerator();
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldfld, field);
+            il.Emit(OpCodes.Ret);
+            return (Func<TTarget, TValue>)method.CreateDelegate(typeof(Func<TTarget, TValue>));
+        }
+
+        public static Action<TTarget, TValue> Setter<TTarget, TValue>(FieldInfo field)
+        {
+            DynamicMethod method = new DynamicMethod("set_" + field.Name, null, new[] { typeof(TTarget), typeof(TValue) }, field.DeclaringType, true);
+            ILGenerator il = method.GetILGenerator();
+            il.Emit(OpCodes.Ldarg_0);
+            il.Emit(OpCodes.Ldarg_1);
+            il.Emit(OpCodes.Stfld, field);
+            il.Emit(OpCodes.Ret);
+            return (Action<TTarget, TValue>)method.CreateDelegate(typeof(Action<TTarget, TValue>));
+        }
+    }
 }

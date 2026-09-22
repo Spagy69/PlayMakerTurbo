@@ -21,12 +21,13 @@ namespace PlayMakerTurbo
         private static string lastText;
         private const string AxisInvertedKey = "cInput_axInv";
 
+        // Both patches are always applied and read their switch on every call, so the switches work at runtime
+        // (the profiler's A/B benchmark flips them). With a switch off the prefix returns true and the original runs.
         public static void Apply()
         {
             HarmonyInstance harmony = HarmonyInstance.Create("PlayMakerTurbo");
-            if (Core.SetGameVolumeSkipUnchanged)
-                TryPatch(harmony, typeof(SetGameVolume), "OnUpdate", "SetGameVolumeOnUpdate");
-            if (Core.CInputAxisInvertedBuilder && ResolveCInputFields())
+            TryPatch(harmony, typeof(SetGameVolume), "OnUpdate", "SetGameVolumeOnUpdate");
+            if (ResolveCInputFields())
                 TryPatch(harmony, typeof(cInput), "_SaveAxInverted", "SaveAxInverted");
         }
 
@@ -51,6 +52,8 @@ namespace PlayMakerTurbo
         // SetGameVolume.OnUpdate sets AudioListener.volume every frame; setting the value it already has is a no-op.
         public static bool SetGameVolumeOnUpdate(SetGameVolume __instance)
         {
+            if (!Core.SetGameVolumeSkipUnchanged)
+                return true;
             float volume = __instance.volume.Value;
             if (AudioListener.volume != volume)
                 AudioListener.volume = volume;
@@ -82,6 +85,13 @@ namespace PlayMakerTurbo
         // with `text = text + bool + "*"` per axis and writes it to PlayerPrefs (the registry on Windows, ~40 us).
         public static bool SaveAxInverted()
         {
+            if (!Core.CInputAxisInvertedBuilder)
+            {
+                // The original writes the key while switched off; forget the cached text so switching back on
+                // rebuilds it once instead of trusting a value from before.
+                lastCount = -1;
+                return true;
+            }
             bool[] inverted = getInvertAxis();
             int count = getAxisLength() + 1;
             bool usePrefs = getUsePlayerPrefs();

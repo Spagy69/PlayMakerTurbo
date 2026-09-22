@@ -9,8 +9,8 @@ namespace PlayMakerTurbo
 {
     // Replacement for FsmProperty.GetValue/SetValue (GetProperty/SetProperty actions). The originals go through
     // PropertyInfo.GetValue/SetValue, which in Mono allocate an argument array and box the value on every call.
-    // For a single C# property whose type selects the same branch of the original's type chain, a cached typed
-    // delegate reads/writes the same value without allocating. Anything else runs the original method.
+    // For a single C# property or field whose type selects the same branch of the original's type chain, a cached
+    // typed delegate reads/writes the same value without allocating. Anything else runs the original method.
     public static class PropertyAccess
     {
         private static readonly object unsupported = new object();
@@ -60,30 +60,49 @@ namespace PlayMakerTurbo
             return accessor;
         }
 
+        // A single instance property or field of a class. Fields matter most: the car scripts (Wheel, Drivetrain,
+        // AxisCarController) expose public fields, and GetProperty/SetProperty on them run about 140 times a frame.
         private static Accessor Build(FsmProperty property, MemberInfo[] members)
         {
             if (members.Length != 1)
                 return null;
+
+            Type type;
             PropertyInfo info = members[0] as PropertyInfo;
-            if (info == null || info.GetIndexParameters().Length != 0 || info.DeclaringType.IsValueType)
+            FieldInfo field = members[0] as FieldInfo;
+            if (info != null)
+            {
+                if (info.GetIndexParameters().Length != 0 || info.DeclaringType.IsValueType)
+                    return null;
+                type = info.PropertyType;
+            }
+            else if (field != null)
+            {
+                if (field.IsStatic || field.DeclaringType.IsValueType)
+                    return null;
+                type = field.FieldType;
+            }
+            else
+            {
                 return null;
+            }
 
             // FsmProperty.PropertyType picks the branch in the original; only take types whose branch is
             // unambiguous and identical to the member's own type.
-            Type type = info.PropertyType;
             if (!ReferenceEquals(property.PropertyType, type) || !Sinks.Supports(type))
                 return null;
 
+            MemberInfo member = members[0];
             try
             {
-                Type generic = typeof(Accessor<,>).MakeGenericType(info.DeclaringType, type);
+                Type generic = typeof(Accessor<,>).MakeGenericType(member.DeclaringType, type);
                 Accessor accessor = (Accessor)Activator.CreateInstance(generic);
-                accessor.Init(members, info);
+                accessor.Init(members);
                 return accessor;
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"PlayMakerTurbo: no fast path for {info.DeclaringType.Name}.{info.Name}, using reflection.\n{e.Message}");
+                Debug.LogWarning($"PlayMakerTurbo: no fast path for {member.DeclaringType.Name}.{member.Name}, using reflection.\n{e.Message}");
                 return null;
             }
         }
@@ -94,7 +113,7 @@ namespace PlayMakerTurbo
             public bool CanGet;
             public bool CanSet;
 
-            public abstract void Init(MemberInfo[] members, PropertyInfo info);
+            public abstract void Init(MemberInfo[] members);
             public abstract void Get(FsmProperty property, Object target);
             public abstract void Set(FsmProperty property, Object target);
         }
@@ -105,16 +124,28 @@ namespace PlayMakerTurbo
             private Action<TTarget, TValue> setter;
             private Sink<TValue> sink;
 
-            public override void Init(MemberInfo[] members, PropertyInfo info)
+            public override void Init(MemberInfo[] members)
             {
                 Members = members;
                 sink = Sinks.Get<TValue>();
-                MethodInfo get = info.GetGetMethod(true);
-                MethodInfo set = info.GetSetMethod(true);
-                if (get != null)
-                    getter = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
-                if (set != null && sink.CanSet)
-                    setter = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
+                PropertyInfo info = members[0] as PropertyInfo;
+                if (info != null)
+                {
+                    MethodInfo get = info.GetGetMethod(true);
+                    MethodInfo set = info.GetSetMethod(true);
+                    if (get != null)
+                        getter = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
+                    if (set != null && sink.CanSet)
+                        setter = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
+                }
+                else
+                {
+                    // readonly and const fields keep the original path for writes (FieldInfo.SetValue has its own rules).
+                    FieldInfo field = (FieldInfo)members[0];
+                    getter = InstanceField.Getter<TTarget, TValue>(field);
+                    if (sink.CanSet && !field.IsInitOnly && !field.IsLiteral)
+                        setter = InstanceField.Setter<TTarget, TValue>(field);
+                }
                 CanGet = getter != null;
                 CanSet = setter != null;
             }
