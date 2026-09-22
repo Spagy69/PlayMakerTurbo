@@ -28,6 +28,10 @@ the same spot in the world.
 | managed allocations | 17.9 KB/frame | | 12.4 KB/frame |
 | garbage collections | 1.4 per minute | | 0.8 per minute |
 
+The profiler's A/B benchmark, which switches one option off and on in 10 second blocks with the player, game
+time, weather and traffic frozen, puts the mouse pick cache at 0.87 ms per frame (95% interval 0.85 to 0.90 ms),
+about 105 to 116 FPS at that spot.
+
 The profiler also counts what gets skipped. In a typical frame about 900 of 1880 `Update` calls, 95 percent
 of `LateUpdate` calls and 98 percent of `FixedUpdate` calls are skipped because the FSM would provably do
 nothing in them.
@@ -103,11 +107,13 @@ call searches objects by tag.
 `SetGameVolumeSkipUnchanged` writes `AudioListener.volume` only when the value differs from the current one.
 
 `PropertyDelegates` replaces reflection in the `GetProperty` and `SetProperty` actions with a cached typed
-delegate, for single member properties whose type selects the same branch of the original type chain. Mono's
-`PropertyInfo.GetValue/SetValue` allocates an argument array and boxes the value on every call; the delegate
-allocates nothing. Writes to Material, Texture and GameObject always take the original path, because when
-their parameter is None the original falls through to the generic Object branch. Member paths with more than
-one step, fields, enums and static properties also take the original path.
+delegate, for a single property or field whose type selects the same branch of the original type chain. Mono's
+`PropertyInfo.GetValue/SetValue` and `FieldInfo.GetValue/SetValue` box the value on every call; the delegate
+allocates nothing. Fields matter most: the car scripts (`Wheel`, `Drivetrain`, `AxisCarController`) expose public
+fields, and while driving the game reads and writes them about 140 times a frame, around 3 KB of garbage per
+frame on the original path. Writes to Material, Texture and GameObject always take the original path, because
+when their parameter is None the original falls through to the generic Object branch. Member paths with more
+than one step, readonly fields, enums and static members also take the original path.
 
 `CInputAxisInvertedBuilder` patches `cInput._SaveAxInverted`, which the `CInputSetAxisInverted` action calls
 every frame. The original rebuilds a string one axis at a time and writes it to PlayerPrefs, which on Windows
@@ -166,8 +172,9 @@ You need:
   development with Unity workload, the same setup the MSCLoader mod template asks for. Check for the folder
   `C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v3.5\Profile\Unity Full v3.5`.
 - My Winter Car with MSCLoader installed. The runtime links against `UnityEngine.dll`, `PlayMaker.dll`,
-  `Assembly-CSharp.dll`, `cInput.dll` and `0Harmony.dll` from the game's `Managed` folder. Those are game files
-  and are not part of this repository.
+  `Assembly-CSharp.dll`, `cInput.dll` and `0Harmony.dll` from the game's `Managed` folder; the profiler also
+  needs `MSCLoader.dll` and `Assembly-CSharp-firstpass.dll`. Those are game and loader files and are not part
+  of this repository.
 
 Then run the build script from the repository folder:
 
@@ -186,15 +193,17 @@ has to be compiled against the patched `PlayMaker.dll`:
    `"PlayMakerTurbo Installer.exe" <folder> --patch-only`. If Turbo is already installed in the game, the
    original is taken from `PlayMaker.dll.orig`.
 3. Build the runtime (`Runtime/`, .NET 3.5) with MSBuild against that patched copy.
-4. Copy the installer, the runtime, the Mono.Cecil files and the documents into `dist\`.
+4. Build the profiler mod (`Profiler/`, .NET 3.5). It does not need the patched `PlayMaker.dll`.
+5. Copy the installer, the runtime, the Mono.Cecil files and the documents into `dist\`, and the profiler with
+   its README into `dist\Profiler\`.
 
 ## The profiler
 
-Most of the numbers above come from a separate MSCLoader mod, `MWCFsmProfiler`. F9 records everything: time
-per FSM, per action type, per MonoBehaviour script and per mod, plus a frame breakdown of physics, rendering
-and scripts, allocations per caller and GC counts. F10 records without any patching, which gives clean FPS,
-the time spent in Turbo's own loops and the allocation rate. Reports land in
-`Mods\Config\Mod Settings\MWCFsmProfiler`.
+The numbers in this README come from the FSM Profiler, an MSCLoader mod in the `Profiler` folder of this
+repository and of the release zip. It times every FSM, state, action, event, script and mod, splits each frame
+into its phases, tracks allocations down to the code that makes them, keeps traces of spike frames, and runs
+A/B benchmarks of Turbo's options with statistics. It works without Turbo too. See
+[Profiler/README.md](Profiler/README.md).
 
 ## What Turbo does not do
 
@@ -202,8 +211,10 @@ It does not disable distant objects or their FSMs the way MOP or NOP do. That ch
 causes the usual problems with items that save in the wrong state.
 
 It does not remove the stutter from garbage collection. Unity 5 stops the whole game and walks the entire heap,
-which at 450 MB takes around 200 ms. Turbo only lowers the allocation rate so collections happen less often.
-In my game the largest single allocator was the Cheatbox++ mod at 10.9 KB per frame.
+which at about 400 MB takes around 140 ms. Turbo only lowers the allocation rate so collections happen less
+often. While driving, `PropertyDelegates` cut the game's allocations from 10.6 to 5.6 KB per frame in the
+profiler. Of what is left, about 2 KB per frame are `Collision` objects that Unity creates before every
+`OnCollisionStay` call, which Unity 5 has no way to reuse.
 
 It does not speed up rendering, which the profiler puts at about 4.5 ms of an 11.6 ms frame. Shadow distance is
 the setting that moves that number the most.

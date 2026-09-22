@@ -1,4 +1,4 @@
-# Builds the installer and the runtime and puts a ready release into dist\.
+# Builds the installer, the runtime and the profiler mod and puts a ready release into dist\.
 #
 #   .\build.ps1                                   finds the game through Steam
 #   .\build.ps1 -GamePath "E:\Games\My Winter Car"
@@ -57,7 +57,11 @@ if ($LASTEXITCODE) { throw 'Patching the copy of PlayMaker.dll failed.' }
 & $msbuild (Join-Path $root 'Runtime\PlayMakerTurbo.csproj') -p:Configuration=Release "-p:ManagedPath=$managed" "-p:PlayMakerPath=$work\PlayMaker.dll" -v:m -nologo
 if ($LASTEXITCODE) { throw 'Runtime build failed.' }
 
-# 4. Release folder
+# 4. Profiler mod (optional tool, works with and without Turbo installed)
+& $msbuild (Join-Path $root 'Profiler\MWCFsmProfiler.csproj') -p:Configuration=Release "-p:ManagedPath=$managed" -v:m -nologo
+if ($LASTEXITCODE) { throw 'Profiler build failed.' }
+
+# 5. Release folder
 $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory $dist -Force | Out-Null
 foreach ($name in 'PlayMakerTurbo Installer.exe', 'PlayMakerTurbo Installer.exe.config', 'Mono.Cecil.dll', 'Mono.Cecil.Mdb.dll', 'Mono.Cecil.Pdb.dll', 'Mono.Cecil.Rocks.dll') {
@@ -65,5 +69,9 @@ foreach ($name in 'PlayMakerTurbo Installer.exe', 'PlayMakerTurbo Installer.exe.
 }
 Copy-Item (Join-Path $root 'Runtime\bin\Release\PlayMakerTurbo.dll') $dist -Force
 foreach ($name in 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') { Copy-Item (Join-Path $root $name) $dist -Force }
+$profilerDist = Join-Path $dist 'Profiler'
+New-Item -ItemType Directory $profilerDist -Force | Out-Null
+Copy-Item (Join-Path $root 'Profiler\bin\Release\MWCFsmProfiler.dll') $profilerDist -Force
+Copy-Item (Join-Path $root 'Profiler\README.md') $profilerDist -Force
 
 Write-Host "Done. The release is in $dist"

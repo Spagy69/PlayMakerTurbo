@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FSM Profiler Report</title>
+<style>
+:root{--bg:#f7f7f5;--panel:#fff;--text:#1d1d1b;--muted:#6b6b66;--line:#e2e1dc;--accent:#b4531a;--good:#2f7d32;--bad:#b3261e;--neutral:#6b6b66;
+--c0:#4e79a7;--c1:#f28e2b;--c2:#e15759;--c3:#76b7b2;--c4:#59a14f;--c5:#edc948;--c6:#b07aa1;--c7:#bab0ac}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--panel:#1f1f1c;--text:#ecebe6;--muted:#9a9990;--line:#34332f;--accent:#f0a060;--good:#6cc070;--bad:#f07068}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+h1{font-size:18px;margin:0}.muted{color:var(--muted)}
+nav{display:flex;flex-wrap:wrap;gap:4px;padding:8px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
+nav button{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit}
+nav button.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+main{padding:16px 20px;max-width:1600px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}.card b{display:block;font-size:20px}
+.card small{color:var(--muted)}
+table{border-collapse:collapse;width:100%;background:var(--panel);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+th,td{padding:4px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{cursor:pointer;background:var(--panel);user-select:none}th.sorted{color:var(--accent)}
+td.l,th.l{text-align:left;white-space:normal;word-break:break-word;min-width:12em}
+.scroll,.tw{overflow-x:auto}
+tr.child td{color:var(--muted);font-size:13px}tr.child td.l{padding-left:26px}
+tr.has{cursor:pointer}tr.has td:first-child::before{content:"\25B8 ";color:var(--muted)}tr.open td:first-child::before{content:"\25BE "}
+.tools{display:flex;gap:8px;align-items:center;margin:8px 0}
+input[type=search]{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);min-width:260px;font:inherit}
+.pos{color:var(--bad)}.neg{color:var(--good)}
+.verdict-gain{color:var(--good);font-weight:600}.verdict-worse{color:var(--bad);font-weight:600}.verdict-noise{color:var(--neutral)}
+canvas{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin:6px 0;font-size:13px}.legend i{display:inline-block;width:10px;height:10px;margin-right:4px;border-radius:2px}
+pre{background:var(--panel);border:1px solid var(--line);padding:10px;border-radius:8px;overflow:auto}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>FSM Profiler Report</h1><div class="muted" id="meta"></div></div>
+  <div><label class="muted">Compare with another report.json: <input type="file" id="cmp" accept=".json"></label> <span id="cmpName" class="muted"></span></div>
+</header>
+<nav id="tabs"></nav>
+<main id="main"></main>
+<script id="data" type="application/json">/*DATA*/</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+let C = null; // report loaded for comparison
+const fmt = (v, d = 3) => v == null || isNaN(v) ? "" : Number(v).toFixed(d);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const key = r => r.name + "|" + (r.detail || "");
+
+const COLS = [
+  {k:"name", t:"Name", l:true}, {k:"detail", t:"Where / detail", l:true},
+  {k:"self", t:"Self ms/f", d:4}, {k:"incl", t:"Incl ms/f", d:4}, {k:"calls", t:"Calls/f", d:1},
+  {k:"usPerCall", t:"µs/call", d:2}, {k:"maxMs", t:"Max ms", d:2}, {k:"kb", t:"KB/f", d:2}];
+
+const TABS = [
+  ["Summary", summary], ["Timeline", timeline], ["FSMs", m => table(D.fsms, "fsms")(m)],
+  ["Action instances", m => table(D.actionInstances, "actionInstances")(m)], ["Action types", m => table(D.actionTypes, "actionTypes")(m)],
+  ["Events", m => table(D.events, "events")(m)], ["Scripts", m => table(D.scripts, "scripts")(m)], ["Mods", m => table(D.mods, "mods")(m)],
+  ["Waste", waste], ["Spikes", spikes], ["Benchmark", benchmark], ["Groups", groups], ["Turbo & render", raw]];
+
+let current = 0;
+function nav() {
+  const n = document.getElementById("tabs");
+  n.innerHTML = TABS.map((t, i) => `<button class="${i === current ? "on" : ""}" data-i="${i}">${t[0]}</button>`).join("");
+  n.querySelectorAll("button").forEach(b => b.onclick = () => { current = +b.dataset.i; render(); });
+}
+function render() { nav(); const m = document.getElementById("main"); m.innerHTML = ""; TABS[current][1](m); }
+
+function card(label, v, cv, unit, lowerIsBetter) {
+  let delta = "";
+  if (cv != null && v != null) {
+    const d = v - cv, better = lowerIsBetter ? d < 0 : d > 0;
+    delta = `<small class="${Math.abs(d) < 1e-9 ? "" : better ? "neg" : "pos"}">${d >= 0 ? "+" : ""}${fmt(d, 2)} vs compared</small>`;
+  }
+  return `<div class="card"><small>${label}</small><b>${v == null ? "" : fmt(v, 2)}${unit || ""}</b>${delta}</div>`;
+}
+
+function summary(m) {
+  const s = D.summary, c = C ? C.summary : {};
+  m.innerHTML = `<div class="cards">
+    ${card("FPS (avg)", s.fps, c.fps, "", false)}${card("Frame avg", s.avgMs, c.avgMs, " ms", true)}
+    ${card("Median", s.p50, c.p50, " ms", true)}${card("p95", s.p95, c.p95, " ms", true)}${card("p99", s.p99, c.p99, " ms", true)}
+    ${card("1% low FPS", s.low1Fps, c.low1Fps, "", false)}${card("Max frame", s.maxMs, c.maxMs, " ms", true)}
+    ${card("Spikes", s.spikes, c.spikes, "", true)}${card("GC / min", s.gcPerMin, c.gcPerMin, "", true)}
+    ${card("Alloc KB/frame", s.allocKBPerFrame, c.allocKBPerFrame, "", true)}${card("Heap end", s.heapEndMB, c.heapEndMB, " MB", true)}
+    ${card("Probe overhead", s.overheadUs, c.overheadUs, " µs/call", true)}</div>
+    <h3>Frame breakdown (ms per frame)</h3>` + breakdownTable() +
+    `<h3>Where the allocations happen (KB per frame)</h3><table><tr><th class="l">Part</th><th>KB/frame</th></tr>` +
+    [["All managed allocations", s.allocKBPerFrame], [" inside timed calls", s.allocTimedKB], [" outside any timed call", Math.max(0, s.allocKBPerFrame - s.allocTimedKB)],
+     ["Physics window (simulation + callbacks)", s.allocPhysicsKB], [" outside timed callbacks", s.allocPhysicsUntimedKB],
+     ["Render window (render callbacks, OnGUI)", s.allocRenderKB], [" outside timed callbacks", s.allocRenderUntimedKB]]
+      .map(r => `<tr><td class="l">${r[0]}</td><td>${fmt(r[1], 2)}</td></tr>`).join("") + "</table>" +
+    `<p class="muted">Self time per category with the measured probe overhead removed. "Not timed" is engine work the profiler cannot see: animation, audio, particles, GC pauses, frame pacing.</p>`;
+}
+function breakdownTable() {
+  const rows = Object.keys(D.breakdown).map(k => [k, D.breakdown[k], C && C.breakdown ? C.breakdown[k] : null]);
+  return `<table><tr><th class="l">Part</th><th>ms/frame</th>${C ? "<th>compared</th><th>Δ</th>" : ""}</tr>` +
+    rows.map(r => `<tr><td class="l">${esc(r[0])}</td><td>${fmt(r[1])}</td>${C ? `<td>${fmt(r[2])}</td><td class="${r[1] - r[2] > 0 ? "pos" : "neg"}">${fmt(r[1] - r[2])}</td>` : ""}</tr>`).join("") + "</table>";
+}
+
+const SERIES = [["fsm","PlayMaker core"],["action","Actions"],["event","Events"],["script","Scripts"],["mod","Mods"],["physics","Physics"],["render","Rendering"]];
+function timeline(m) {
+  const t = D.timeline, n = t.ms.length;
+  m.innerHTML = `<div class="legend">${SERIES.map((s, i) => `<span><i style="background:var(--c${i})"></i>${s[1]}</span>`).join("")}<span><i style="background:var(--text)"></i>Frame time</span><span><i style="background:var(--bad)"></i>GC</span></div>
+    <canvas id="tl" height="320"></canvas><div id="tlinfo" class="muted">Hover the chart for a frame's numbers.</div>
+    <h3>Heap (MB) and allocations (KB/frame)</h3><canvas id="heap" height="160"></canvas>`;
+  if (!n) return;
+  const cv = document.getElementById("tl"), ctx = cv.getContext("2d");
+  const W = cv.width = cv.clientWidth * devicePixelRatio, H = cv.height = 320 * devicePixelRatio;
+  const per = Math.max(1, Math.ceil(n / W)), buckets = Math.ceil(n / per);
+  const avg = (arr, b) => { let s = 0, c = 0; for (let i = b * per; i < Math.min(n, (b + 1) * per); i++) { s += arr[i]; c++; } return c ? s / c : 0; };
+  const mx = (arr, b) => { let v = 0; for (let i = b * per; i < Math.min(n, (b + 1) * per); i++) v = Math.max(v, arr[i]); return v; };
+  const sorted = t.ms.slice().sort((a, b) => a - b), top = sorted[Math.floor(n * 0.995)] * 1.2 || 1;
+  const y = v => H - Math.min(v, top) / top * H, bw = W / buckets;
+  const colors = SERIES.map((s, i) => getComputedStyle(document.documentElement).getPropertyValue("--c" + i));
+  for (let b = 0; b < buckets; b++) {
+    let acc = 0;
+    SERIES.forEach((s, i) => { const v = avg(t[s[0]], b); ctx.fillStyle = colors[i]; ctx.fillRect(b * bw, y(acc + v), Math.ceil(bw), y(acc) - y(acc + v)); acc += v; });
+  }
+  ctx.strokeStyle = getComputedStyle(document.body).color; ctx.lineWidth = devicePixelRatio; ctx.beginPath();
+  for (let b = 0; b < buckets; b++) ctx.lineTo(b * bw + bw / 2, y(mx(t.ms, b)));
+  ctx.stroke();
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--bad");
+  (t.gc || []).forEach(f => ctx.fillRect(f / per * bw, 0, Math.max(1, devicePixelRatio), 8 * devicePixelRatio));
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted"); ctx.font = `${11 * devicePixelRatio}px sans-serif`;
+  ctx.fillText(`${fmt(top, 1)} ms`, 4, 12 * devicePixelRatio);
+  cv.onmousemove = e => {
+    const f = Math.min(n - 1, Math.floor(e.offsetX * devicePixelRatio / bw) * per);
+    document.getElementById("tlinfo").textContent = `frame ${f}: ${fmt(t.ms[f], 2)} ms | ` +
+      SERIES.map(s => `${s[1]} ${fmt(t[s[0]][f], 2)}`).join(", ") + ` | alloc ${fmt(t.allocKB[f], 1)} KB${(t.gc || []).includes(f) ? " | GC" : ""}`;
+  };
+  const hv = document.getElementById("heap"), hx = hv.getContext("2d");
+  const HW = hv.width = hv.clientWidth * devicePixelRatio, HH = hv.height = 160 * devicePixelRatio;
+  const hmax = Math.max(...t.heapMB) || 1, hmin = Math.min(...t.heapMB), amax = Math.max(...t.allocKB) || 1;
+  hx.fillStyle = colors[1];
+  for (let b = 0; b < buckets; b++) { const v = mx(t.allocKB, b); hx.fillRect(b * HW / buckets, HH - v / amax * HH * 0.5, Math.ceil(HW / buckets), v / amax * HH * 0.5); }
+  hx.strokeStyle = colors[0]; hx.lineWidth = 2 * devicePixelRatio; hx.beginPath();
+  for (let b = 0; b < buckets; b++) hx.lineTo(b * HW / buckets, HH - (avg(t.heapMB, b) - hmin) / Math.max(1, hmax - hmin) * HH * 0.9 - 4);
+  hx.stroke();
+  hx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted"); hx.font = `${11 * devicePixelRatio}px sans-serif`;
+  hx.fillText(`heap ${fmt(hmin, 0)}–${fmt(hmax, 0)} MB (line), allocations up to ${fmt(amax, 0)} KB/frame (bars)`, 4, 12 * devicePixelRatio);
+}
+
+const sortState = {};
+function table(rows, id, cols) {
+  return m => {
+    cols = cols || COLS;
+    // An FSM's own self time is only PlayMaker's bookkeeping, so FSM tables open sorted by inclusive time.
+    const st = sortState[id] || (sortState[id] = {k: id === "fsms" || id === "idle" ? "incl" : "self", desc: true, q: ""});
+    const cmp = C && C[id] ? new Map(C[id].map(r => [key(r), r])) : null;
+    m.innerHTML = `<div class="tools"><input type="search" placeholder="Filter by name or place" value="${esc(st.q)}"><span class="muted">${rows.length} rows${cmp ? ", Δ = this report minus compared" : ""}. Click a row with ▸ to expand.</span></div><div class="tw"></div>`;
+    const inp = m.querySelector("input"), tw = m.querySelector(".tw");
+    const draw = () => {
+      const q = st.q.toLowerCase();
+      let list = rows.filter(r => !q || (r.name + " " + (r.detail || "")).toLowerCase().includes(q));
+      list = list.slice().sort((a, b) => { const x = a[st.k], y = b[st.k]; const c = typeof x === "string" ? String(x).localeCompare(y) : (x || 0) - (y || 0); return st.desc ? -c : c; });
+      list = list.slice(0, 1000);
+      let h = "<table><tr>" + cols.map(c => `<th class="${c.l ? "l" : ""} ${st.k === c.k ? "sorted" : ""}" data-k="${c.k}">${c.t}${st.k === c.k ? (st.desc ? " ▾" : " ▴") : ""}</th>`).join("") + (cmp ? "<th>Δ self</th>" : "") + "</tr>";
+      list.forEach((r, i) => {
+        const kids = r.children && r.children.length;
+        h += `<tr class="${kids ? "has" : ""}" data-i="${i}">` + cols.map(c => `<td class="${c.l ? "l" : ""}">${c.l ? esc(r[c.k]) : fmt(r[c.k], c.d)}</td>`).join("");
+        if (cmp) { const o = cmp.get(key(r)); const d = o ? r.self - o.self : null; h += `<td class="${d > 0 ? "pos" : "neg"}">${o ? fmt(d, 4) : "new"}</td>`; }
+        h += "</tr>";
+        if (kids) r.children.forEach(k => { h += `<tr class="child hidden" data-p="${i}">` + cols.map(c => `<td class="${c.l ? "l" : ""}">${c.l ? esc(k[c.k]) : fmt(k[c.k], c.d)}</td>`).join("") + (cmp ? "<td></td>" : "") + "</tr>"; });
+      });
+      tw.innerHTML = h + "</table>";
+      tw.querySelectorAll("th").forEach(th => th.onclick = () => { const k = th.dataset.k; if (!k) return; st.desc = st.k === k ? !st.desc : true; st.k = k; draw(); });
+      tw.querySelectorAll("tr.has").forEach(tr => tr.onclick = () => { tr.classList.toggle("open"); tw.querySelectorAll(`tr[data-p="${tr.dataset.i}"]`).forEach(c => c.classList.toggle("hidden")); });
+    };
+    inp.oninput = () => { st.q = inp.value; draw(); };
+    draw();
+  };
+}
+
+function waste(m) {
+  const cols = [{k:"type", t:"Action", l:true}, {k:"where", t:"FSM / state / #index @ path", l:true}, {k:"samePerFrame", t:"Unchanged writes/f", d:1},
+    {k:"sameShare", t:"Unchanged share", d:3}, {k:"checked", t:"Checked", d:0}, {k:"selfMs", t:"Self ms/f", d:4}];
+  const rows = (D.waste || []).map(r => Object.assign({name: r.type, detail: r.where}, r));
+  m.innerHTML = `<p class="muted">everyFrame actions that write the value their target already has. A share near 1 means the action does nothing useful every frame: a candidate for a PlayMakerTurbo patch.</p><div></div>`;
+  sortState.waste = sortState.waste || {k: "samePerFrame", desc: true, q: ""};
+  table(rows, "waste", cols)(m.lastElementChild);
+  const h = document.createElement("div");
+  h.innerHTML = `<h3>Why the most expensive FSMs are not idle</h3><p class="muted">Update cost per FSM with what its active state still runs or waits for (read when the recording stopped). An FSM whose actions are all finished and that has no delayed events can be skipped by IdleUpdateSkip.</p><div></div>`;
+  m.appendChild(h);
+  table(D.idle || [], "idle")(h.lastElementChild);
+}
+
+function spikes(m) {
+  const s = D.spikes || [];
+  if (!s.length) { m.innerHTML = `<p class="muted">No spike frames were kept (spike capture needs a full recording with "Keep every call of spike frames" on).</p>`; return; }
+  m.innerHTML = `<p class="muted">Frames several times longer than the recent median. Open the spike file in <a href="https://ui.perfetto.dev" target="_blank" rel="noopener">ui.perfetto.dev</a> to see every call of that frame on a timeline.</p>` +
+    s.map(x => `<h3>frame ${x.frame}: ${fmt(x.ms, 1)} ms <span class="muted">(median ${fmt(x.medianMs, 1)}${x.gc ? ", GC" : ""})</span></h3>
+      <p>Cause: <b>${esc(x.cause)}</b>. Timed code covered ${fmt(x.coveredMs, 1)} ms. ${x.file ? `File: <code>${esc(x.file)}</code>` : ""}</p>
+      <table><tr><th>Self ms</th><th class="l">Call</th></tr>${x.top.map(t => `<tr><td>${fmt(t.selfMs, 2)}</td><td class="l">${esc(t.name)}</td></tr>`).join("")}</table>`).join("");
+}
+
+function verdictClass(v) { return /gain/.test(v) ? "verdict-gain" : /worse/.test(v) ? "verdict-worse" : "verdict-noise"; }
+function benchmark(m) {
+  const b = D.benchmark;
+  if (!b) { m.innerHTML = `<p class="muted">This recording is not a benchmark. Press F12 (benchmark) to measure PlayMakerTurbo options against each other.</p>`; return; }
+  const cb = C && C.benchmark ? new Map((C.benchmark.results || []).map(r => [r.option, r])) : null;
+  let h = `<p class="muted">${esc(b.description || "")}</p><div class="scroll"><table><tr><th class="l">Option</th><th>Off ms</th><th>On ms</th><th>Gain ms/frame</th><th>95% interval</th><th>%</th><th>p99 gain</th><th>1% low FPS off → on</th><th>GC frames off/on</th><th>Pairs</th><th class="l">Verdict</th>${cb ? "<th>Compared gain</th>" : ""}</tr>`;
+  (b.results || []).forEach(r => {
+    const o = cb ? cb.get(r.option) : null;
+    h += `<tr><td class="l">${esc(r.option)}</td><td>${fmt(r.offMs)}</td><td>${fmt(r.onMs)}</td><td>${fmt(r.gainMs, 4)}</td><td>${fmt(r.gainLow, 4)} … ${fmt(r.gainHigh, 4)}</td><td>${fmt(r.gainPct, 2)}</td>
+      <td>${fmt(r.p99Gain, 3)} (${fmt(r.p99Low, 3)} … ${fmt(r.p99High, 3)})</td><td>${fmt(r.low1Off, 1)} → ${fmt(r.low1On, 1)}</td><td>${r.gcOff} / ${r.gcOn}</td><td>${r.pairs}</td>
+      <td class="l ${verdictClass(r.verdict)}">${esc(r.verdict)}</td>${cb ? `<td>${o ? fmt(o.gainMs, 4) : ""}</td>` : ""}</tr>`;
+  });
+  h += "</table></div>";
+  if (b.session) h += `<h3>Session comparison</h3><pre>${esc(JSON.stringify(b.session, null, 2))}</pre>`;
+  h += `<h3>Blocks over time</h3><canvas id="bl" height="220"></canvas><div class="legend"><span><i style="background:var(--c0)"></i>option off (A)</span><span><i style="background:var(--c1)"></i>option on (B)</span></div>
+    <h3>Conditions</h3><pre>${esc(JSON.stringify(b.conditions || {}, null, 2))}</pre>`;
+  m.innerHTML = h;
+  const bl = b.blocks || []; if (!bl.length) return;
+  const cv = document.getElementById("bl"), x = cv.getContext("2d");
+  const W = cv.width = cv.clientWidth * devicePixelRatio, H = cv.height = 220 * devicePixelRatio;
+  const vals = bl.map(k => k.meanMs), lo = Math.min(...vals) * 0.98, hi = Math.max(...vals) * 1.02;
+  const cs = getComputedStyle(document.documentElement);
+  bl.forEach((k, i) => { x.fillStyle = cs.getPropertyValue(k.on ? "--c1" : "--c0"); const yy = H - (k.meanMs - lo) / (hi - lo) * H; x.fillRect(i / bl.length * W, yy - 3 * devicePixelRatio, Math.max(2, W / bl.length - 2), 6 * devicePixelRatio); });
+  x.fillStyle = cs.getPropertyValue("--muted"); x.font = `${11 * devicePixelRatio}px sans-serif`;
+  x.fillText(`${fmt(hi, 2)} ms`, 4, 12 * devicePixelRatio); x.fillText(`${fmt(lo, 2)} ms`, 4, H - 4);
+}
+
+function groups(m) {
+  m.innerHTML = "<h3>By FSM name</h3><div></div><h3>By root object</h3><div></div>";
+  const d = m.querySelectorAll("div");
+  const cols = [{k:"name", t:"Name", l:true}, {k:"detail", t:"Count", l:true}, {k:"self", t:"Self ms/f", d:4}, {k:"incl", t:"Incl ms/f", d:4}, {k:"calls", t:"Calls/f", d:1}];
+  table(D.byFsmName, "byFsmName", cols)(d[0]); table(D.byRoot, "byRoot", cols)(d[1]);
+}
+function raw(m) { m.innerHTML = `<pre>${esc(D.turbo)}</pre><pre>${esc(D.render)}</pre>${(D.notes || []).length ? `<h3>Notes</h3><pre>${esc(D.notes.join("\n"))}</pre>` : ""}`; }
+
+document.getElementById("meta").textContent = `${D.created} · ${D.mode} · ${D.summary.frames} frames, ${fmt(D.summary.seconds, 1)} s`;
+document.getElementById("cmp").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => { C = JSON.parse(t); document.getElementById("cmpName").textContent = `comparing with ${f.name} (${C.created})`; render(); })
+    .catch(err => alert("Could not read that file: " + err));
+};
+render();
+</script>
+</body>
+</html>
