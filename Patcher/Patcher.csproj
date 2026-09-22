@@ -10,7 +10,7 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Product>PlayMaker Turbo</Product>
     <AssemblyTitle>PlayMaker Turbo Installer</AssemblyTitle>
-    <Version>1.0.0-beta</Version>
+    <Version>1.1.0-beta</Version>
     <Copyright>Copyright (c) 2026 Vít Machač</Copyright>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
