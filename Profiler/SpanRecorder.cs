@@ -82,6 +82,18 @@ namespace MWCFsmProfiler
             NameRender = Names.Get("Rendering + OnGUI (main thread)");
         }
 
+        // Drops spans recorded before the first frame (calibration), keeping the mode and the buffer.
+        public static void ClearBuffers()
+        {
+            count = 0;
+            Dropped = 0;
+            droppedThisFrame = 0;
+            frameStart = 0L;
+            FrameStarts.Clear();
+            GcFrames.Clear();
+            Spikes.Clear();
+        }
+
         public static void Stop()
         {
             Active = false;

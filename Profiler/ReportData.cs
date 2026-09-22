@@ -60,7 +60,8 @@ namespace MWCFsmProfiler
         public double MousePicksPerFrame, EventsPerFrame;
 
         public double[] CategoryMs = new double[Cat.Count];
-        public double PhysicsMs, RenderMs, UntrackedMs;
+        public double PhysicsMs, RenderMs, UntrackedMs, ProbeOverheadMs;
+        public double[] CategoryOverheadUs = new double[Cat.Count];
 
         public List<Row> Fsms = new List<Row>();
         public List<Row> ActionInstances = new List<Row>();
@@ -160,7 +161,7 @@ namespace MWCFsmProfiler
             float[] ms = new float[n];
             double sum = 0, alloc = 0, gcMs = 0, timedKB = 0, physKB = 0, physUn = 0, rendKB = 0, rendUn = 0;
             double[] cat = new double[Cat.Count];
-            double physics = 0, render = 0;
+            double physics = 0, render = 0, overhead = 0;
             for (int i = 0; i < n; i++)
             {
                 FrameSample f = Timeline.Frames[i];
@@ -174,6 +175,7 @@ namespace MWCFsmProfiler
                 rendUn += f.AllocRenderUntimedKB;
                 physics += f.Physics;
                 render += f.Render;
+                overhead += f.Overhead;
                 cat[Cat.Fsm] += f.Fsm;
                 cat[Cat.Action] += f.Action;
                 cat[Cat.Event] += f.Event;
@@ -203,41 +205,18 @@ namespace MWCFsmProfiler
             MaxMs = ms[n - 1];
             Low1Fps = Stats.LowFps(ms, 0.01);
 
+            // Category self times already have the probe cost of their children removed (Probe.End).
             double tracked = 0;
             for (int c = 0; c < Cat.Count; c++)
             {
                 CategoryMs[c] = cat[c] / n;
                 tracked += CategoryMs[c];
+                CategoryOverheadUs[c] = Calibration.Microseconds(c);
             }
-            // Probe overhead sits in the callers' self time; take it back out of the categories in proportion.
-            double overheadMs = Calibration.OverheadTicks * tickToMs * TotalCalls() / n;
-            if (tracked > 0 && overheadMs > 0)
-            {
-                double scale = Math.Max(0, tracked - overheadMs) / tracked;
-                for (int c = 0; c < Cat.Count; c++)
-                    CategoryMs[c] *= scale;
-                tracked *= scale;
-            }
+            ProbeOverheadMs = overhead / n;
             PhysicsMs = physics / n;
             RenderMs = render / n;
-            UntrackedMs = AvgMs - tracked - PhysicsMs - RenderMs;
-        }
-
-        private static long TotalCalls()
-        {
-            long calls = 0;
-            foreach (FsmEntry e in FsmTimings.Entries.Values)
-                calls += e.Total.Calls;
-            foreach (ActionEntry a in ActionTimings.Entries.Values)
-                calls += a.Frame.Calls + a.Enter.Calls;
-            foreach (EventEntry e in EventFlow.Entries.Values)
-                calls += e.Stat.Calls;
-            foreach (Dictionary<Type, Stat> d in ScriptTimings.Stats)
-                foreach (Stat s in d.Values)
-                    calls += s.Calls;
-            foreach (Stat s in ScriptTimings.ModStats.Values)
-                calls += s.Calls;
-            return calls;
+            UntrackedMs = AvgMs - tracked - PhysicsMs - RenderMs - ProbeOverheadMs;
         }
 
         private void BuildFsms()

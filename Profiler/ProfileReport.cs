@@ -21,8 +21,8 @@ namespace MWCFsmProfiler
             Line(sb, "Spikes (> {0:F1}x recent median): {1}", Timeline.SpikeMultiplier, r.Spikes);
             Line(sb, "GC: {0} collections ({1:F1}/min), frames with a GC average {2:F1} ms", r.GcCount, r.Seconds > 0 ? r.GcCount / r.Seconds * 60 : 0, r.GcFrameAvgMs);
             Line(sb, "Allocations: {0:F1} KB/frame, heap {1:F0} -> {2:F0} MB", r.AllocKBPerFrame, r.HeapStartMB, r.HeapEndMB);
-            Line(sb, "Probe overhead: {0:F3} us per timed call, subtracted in 'self' and 'incl' columns ({1} actions, {2} scripts patched)",
-                r.OverheadUs, r.PatchedActions, r.PatchedScripts);
+            Line(sb, "Probe overhead per timed call (subtracted in 'self' and 'incl'): FSM {0:F3} us, action {1:F3}, event {2:F3}, script {3:F3}, minimal {4:F3} ({5} actions, {6} scripts patched)",
+                r.CategoryOverheadUs[Cat.Fsm], r.CategoryOverheadUs[Cat.Action], r.CategoryOverheadUs[Cat.Event], r.CategoryOverheadUs[Cat.Script], r.OverheadUs, r.PatchedActions, r.PatchedScripts);
             Line(sb, "Events processed: {0:F1}/frame, mouse-pick requests: {1:F1}/frame", r.EventsPerFrame, r.MousePicksPerFrame);
             if (r.StackRepairs > 0)
                 Line(sb, "Note: {0} frames ended with an open timing stack (an exception skipped a postfix); nesting in those frames is approximate.", r.StackRepairs);
@@ -37,6 +37,7 @@ namespace MWCFsmProfiler
                 Line(sb, "{0,-36}{1,8:F2}", Cat.Names[c], r.CategoryMs[c]);
             Line(sb, "{0,-36}{1,8:F2}   ({2:F2} fixed steps/frame, fixedDeltaTime {3:F1} ms)", "Physics simulation + collisions", r.PhysicsMs, r.FixedStepsPerFrame, r.FixedDeltaMs);
             Line(sb, "{0,-36}{1,8:F2}   (culling, shadows, draw submission, waiting for the render thread)", "Rendering (main thread)", r.RenderMs);
+            Line(sb, "{0,-36}{1,8:F2}   (probes of top-level calls; absent without the profiler)", "Profiler overhead", r.ProbeOverheadMs);
             Line(sb, "{0,-36}{1,8:F2}   (animation, audio, particles, input, GC, frame pacing)", "Not timed", r.UntrackedMs);
             Line(sb, "{0,-36}{1,8:F2}", "Total frame", r.AvgMs);
             sb.AppendLine();

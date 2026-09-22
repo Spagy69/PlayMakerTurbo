@@ -8,6 +8,7 @@ namespace MWCFsmProfiler
         public float Ms;
         public float Fsm, Action, Event, Script, Mod; // self time per category
         public float Physics, Render;
+        public float Overhead;  // probe cost outside timed calls (profiler only)
         public float AllocKB;
         public float AllocTimedKB;    // inside top-level timed calls
         public float AllocPhysicsKB;  // physics window: simulation + collision/trigger callbacks
@@ -100,6 +101,7 @@ namespace MWCFsmProfiler
                     f.Mod = (float)(Probe.FrameSelf[Cat.Mod] * tickToMs);
                     f.Physics = (float)(CurPhysics * tickToMs);
                     f.Render = (float)(CurRender * tickToMs);
+                    f.Overhead = (float)(Probe.FrameOverhead * tickToMs);
                     // Heap growth between boundaries; when a collection ran the drop hides it, so count none.
                     f.AllocKB = heap > lastHeap ? (heap - lastHeap) / 1024f : 0f;
                     f.HeapMB = heap / 1048576f;
@@ -135,6 +137,7 @@ namespace MWCFsmProfiler
             CurPhysics = CurRender = 0L;
             CurPhysicsBytes = CurRenderBytes = CurPhysicsUntimed = CurRenderUntimed = 0L;
             Probe.FrameTopBytes = 0L;
+            Probe.FrameOverhead = 0;
             Array.Clear(Probe.FrameSelf, 0, Probe.FrameSelf.Length);
             Probe.FrameEvents = 0;
             Probe.FramePicks = 0;

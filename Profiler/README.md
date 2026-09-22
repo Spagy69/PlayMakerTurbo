@@ -39,8 +39,13 @@ Every timed call is booked twice: its inclusive time (everything that ran inside
 timed calls nested inside). An FSM's self time is only PlayMaker's own bookkeeping, and its actions do the
 real work, so FSM tables are sorted by inclusive time and everything else by self time.
 
-At the start of each recording the profiler times one empty patched method 100 000 times and subtracts that
-cost from every table. On a Ryzen 5 8645HS it is about 0.08 µs per timed call.
+A probe's cost lands in the code that called the timed method, so it has to be subtracted there. At the start
+of each recording the profiler measures it per kind of probe. An empty patched method timed 100 000 times gives
+the cost of Harmony's glue and the shared probe work (about 0.08 µs on a Ryzen 5 8645HS). The real bookkeeping
+of the FSM, action, event and script probes is then run directly on a live FSM from the scene, and whatever it
+costs beyond the minimal probe is added to that kind. Every call remembers the probe cost of the timed calls
+nested inside it and subtracts exactly that from its self time. The probe cost of top-level calls happens
+outside any timed call and gets its own line, "Profiler overhead", in the frame breakdown.
 
 The report covers:
 

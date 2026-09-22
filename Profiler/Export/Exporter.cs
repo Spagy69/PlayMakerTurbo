@@ -70,7 +70,8 @@ namespace MWCFsmProfiler
                 .Prop("allocTimedKB", r.AllocTimedKB, 2).Prop("allocPhysicsKB", r.AllocPhysicsKB, 2).Prop("allocPhysicsUntimedKB", r.AllocPhysicsUntimedKB, 2)
                 .Prop("allocRenderKB", r.AllocRenderKB, 2).Prop("allocRenderUntimedKB", r.AllocRenderUntimedKB, 2)
                 .Prop("heapStartMB", r.HeapStartMB, 1).Prop("heapEndMB", r.HeapEndMB, 1)
-                .Prop("overheadUs", r.OverheadUs).Prop("stackRepairs", r.StackRepairs)
+                .Prop("overheadUs", r.OverheadUs).Prop("overheadFsmUs", r.CategoryOverheadUs[Cat.Fsm]).Prop("overheadActionUs", r.CategoryOverheadUs[Cat.Action])
+                .Prop("overheadScriptUs", r.CategoryOverheadUs[Cat.Script]).Prop("stackRepairs", r.StackRepairs)
                 .Prop("eventsPerFrame", r.EventsPerFrame, 2).Prop("mousePicksPerFrame", r.MousePicksPerFrame, 2)
                 .Prop("fixedStepsPerFrame", r.FixedStepsPerFrame, 3)
                 .EndObject();
@@ -78,7 +79,7 @@ namespace MWCFsmProfiler
             j.Name("breakdown").BeginObject();
             for (int c = 0; c < Cat.Count; c++)
                 j.Prop(Cat.Names[c], r.CategoryMs[c]);
-            j.Prop("Physics", r.PhysicsMs).Prop("Rendering", r.RenderMs).Prop("Not timed", r.UntrackedMs);
+            j.Prop("Physics", r.PhysicsMs).Prop("Rendering", r.RenderMs).Prop("Profiler overhead", r.ProbeOverheadMs).Prop("Not timed", r.UntrackedMs);
             j.EndObject();
 
             WriteTimeline(j);

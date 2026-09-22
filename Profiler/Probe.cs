@@ -35,6 +35,8 @@ namespace MWCFsmProfiler
         public long SelfBytes;
         public int Descendants;
         public int Children;
+        public double ChildOverhead;      // probe cost of the timed calls directly inside
+        public double DescendantOverhead; // probe cost of all timed calls inside, any depth
     }
 
     // Totals of one timed thing (an FSM, a state, an action instance, a script type, a mod callback...).
@@ -48,6 +50,8 @@ namespace MWCFsmProfiler
         public long Descendants; // timed calls nested inside (any depth), for overhead correction
         public long Children;    // timed calls directly inside
         public long MaxTicks;    // slowest single call
+        public double OverheadDirect; // probe cost of direct children, in ticks
+        public double OverheadAll;    // probe cost of all nested timed calls, in ticks
         public int NameId = -1;
         public long OverlayMark; // Self at the overlay's last refresh
 
@@ -60,14 +64,17 @@ namespace MWCFsmProfiler
             SelfBytes += m.SelfBytes;
             Descendants += m.Descendants;
             Children += m.Children;
+            OverheadDirect += m.ChildOverhead;
+            OverheadAll += m.DescendantOverhead;
             if (m.Elapsed > MaxTicks)
                 MaxTicks = m.Elapsed;
         }
 
         // Probe overhead lands almost entirely in the caller: the probe takes its timestamps as the last
-        // thing before and the first thing after the timed call.
-        public long CorrectedSelf => Math.Max(0L, Self - (long)(Calibration.OverheadTicks * Children));
-        public long CorrectedTicks => Math.Max(0L, Ticks - (long)(Calibration.OverheadTicks * Descendants));
+        // thing before and the first thing after the timed call. Each child's cost depends on its kind of probe
+        // (Calibration.CategoryTicks), so it is summed per call instead of estimated from a count.
+        public long CorrectedSelf => Math.Max(0L, Self - (long)OverheadDirect);
+        public long CorrectedTicks => Math.Max(0L, Ticks - (long)OverheadAll);
     }
 
     // Interned display names, so spans and stats carry an int instead of a string.
@@ -102,6 +109,8 @@ namespace MWCFsmProfiler
         private static readonly long[] childBytes = new long[MaxDepth];
         private static readonly int[] descendants = new int[MaxDepth];
         private static readonly int[] children = new int[MaxDepth];
+        private static readonly double[] childOverhead = new double[MaxDepth];
+        private static readonly double[] descendantOverhead = new double[MaxDepth];
         private static int depth;
 
         [ThreadStatic] private static bool isMainThread;
@@ -116,6 +125,8 @@ namespace MWCFsmProfiler
         public static readonly long[] FrameSelf = new long[Cat.Count];
         public static readonly long[] TotalSelf = new long[Cat.Count];
         public static long FrameTopBytes;   // allocations inside top-level timed calls this frame
+        public static double FrameOverhead;  // probe cost of top-level calls: lands outside any timed call
+        public static double TotalOverhead;
         public static int FrameEvents;
         public static int FramePicks;
 
@@ -142,6 +153,8 @@ namespace MWCFsmProfiler
                 childBytes[depth] = 0L;
                 descendants[depth] = 0;
                 children[depth] = 0;
+                childOverhead[depth] = 0;
+                descendantOverhead[depth] = 0;
             }
             else
             {
@@ -176,6 +189,8 @@ namespace MWCFsmProfiler
                 m.SelfBytes = Math.Max(0L, m.Bytes - childBytes[slot]);
                 m.Descendants = descendants[slot];
                 m.Children = children[slot];
+                m.ChildOverhead = childOverhead[slot];
+                m.DescendantOverhead = descendantOverhead[slot];
                 // Restoring the caller's depth also repairs the stack after an exception skipped a postfix.
                 depth = s.Depth;
                 if (depth == 0)
@@ -193,6 +208,14 @@ namespace MWCFsmProfiler
                 childBytes[depth] += m.Bytes;
                 descendants[depth] += m.Descendants + 1;
                 children[depth]++;
+                double own = category >= 0 ? Calibration.CategoryTicks[category] : Calibration.OverheadTicks;
+                childOverhead[depth] += own;
+                descendantOverhead[depth] += m.DescendantOverhead + own;
+                if (depth == 0)
+                {
+                    FrameOverhead += own;
+                    TotalOverhead += own;
+                }
             }
             else
             {
@@ -200,12 +223,15 @@ namespace MWCFsmProfiler
                 m.SelfBytes = m.Bytes;
                 m.Descendants = 0;
                 m.Children = 0;
+                m.ChildOverhead = 0;
+                m.DescendantOverhead = 0;
             }
 
             if (category >= 0)
             {
-                FrameSelf[category] += m.Self;
-                TotalSelf[category] += m.Self;
+                long self = Math.Max(0L, m.Self - (long)m.ChildOverhead);
+                FrameSelf[category] += self;
+                TotalSelf[category] += self;
             }
             if (SpanRecorder.Active)
                 SpanRecorder.Add(s.Ticks, m.Elapsed, nameId, s.Depth < 0 ? MaxDepth : s.Depth);
@@ -281,6 +307,8 @@ namespace MWCFsmProfiler
             FrameEvents = 0;
             FramePicks = 0;
             FrameTopBytes = 0;
+            FrameOverhead = 0;
+            TotalOverhead = 0;
             Gaps.Clear();
             lastMarkMemory = 0L;
             lastMarkName = -1;

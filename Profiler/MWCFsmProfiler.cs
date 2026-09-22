@@ -123,22 +123,25 @@ namespace MWCFsmProfiler
                 return;
 
             Probe.MarkMainThread();
-            FsmTimings.Reset();
-            ActionTimings.Reset();
-            EventFlow.Reset();
-            ScriptTimings.Reset();
             Probe.MeasureMemory = measureMemory.GetValue();
             Timeline.SpikeMultiplier = spikeMultiplier.GetValue();
-            if (needsPatches)
-                Calibration.Run();
-            Probe.Reset();
-            if (newMode == RecordMode.Full && measureMemory.GetValue())
-                Probe.MeasureBackground();
 
             if (newMode == RecordMode.Trace)
                 SpanRecorder.StartTrace(traceFrames.GetValue());
             else if (newMode == RecordMode.Full && spikeCapture.GetValue())
                 SpanRecorder.StartFrameCapture();
+
+            // Calibrated with the span recorder already on: recording a span is part of every probe's cost.
+            if (needsPatches)
+                Calibration.Run();
+            SpanRecorder.ClearBuffers();
+            FsmTimings.Reset();
+            ActionTimings.Reset();
+            EventFlow.Reset();
+            ScriptTimings.Reset();
+            Probe.Reset();
+            if (newMode == RecordMode.Full && measureMemory.GetValue())
+                Probe.MeasureBackground();
 
             heapAtStart = GC.GetTotalMemory(false);
             FramePhases.Begin();
