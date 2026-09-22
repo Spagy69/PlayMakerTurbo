@@ -25,6 +25,9 @@ namespace PlayMakerTurbo
         public static bool ActiveLists = true;
         // Sending an event to the FSMs of one GameObject looks at that GameObject instead of walking every FSM.
         public static bool FastEventRouting = true;
+        // An FSM whose state only waits (Wait, or MousePickEvent without a hit) gets that waiting done without the
+        // rest of Fsm.Update. See LightTick.
+        public static bool LightTicks = true;
         // Profiler found 44 mismatches in 1.49M checks, so this stays off: not identical to the original.
         public static bool ActiveFast = false;
         // Almost identical, off by default: reuses this frame's mouse-pick raycast per layer mask. Differs from
@@ -41,6 +44,12 @@ namespace PlayMakerTurbo
         public static long ActiveMismatches;
 
         public static long ActionUpdatesSkipped;
+        public static long LightTicked;
+
+        // Time.deltaTime of the Update phase, read once by the ticker. It does not change during the phase, and
+        // ~1100 FSMs add it to their state time every frame.
+        internal static bool UpdateDeltaValid;
+        internal static float UpdateDelta;
         public static long MousePickRaycasts;
         public static long MousePickCacheHits;
 
@@ -134,7 +143,7 @@ namespace PlayMakerTurbo
             if (state.finished)
                 return;
 
-            state.StateTime += Time.deltaTime;
+            state.StateTime += UpdateDeltaValid ? UpdateDelta : Time.deltaTime;
             for (int i = 0; i < state.ActiveActions.Count; i++)
             {
                 FsmStateAction action = state.ActiveActions[i];
@@ -153,6 +162,8 @@ namespace PlayMakerTurbo
         public const int FlagNeedsUpdate = 2;
         public const int FlagLateUpdate = 4;
         public const int FlagFixedUpdate = 8;
+        public const int FlagLightWait = 16;
+        public const int FlagLightPick = 32;
 
         // Which callbacks the action's type overrides, cached on the action instance itself (the patcher added
         // FsmStateAction.TurboFlags), so the per-frame checks read a field instead of doing a dictionary lookup.
@@ -179,6 +190,8 @@ namespace PlayMakerTurbo
                     flags |= FlagLateUpdate;
                 if (Overrides(type, "OnFixedUpdate"))
                     flags |= FlagFixedUpdate;
+                if (LightTick.Ready())
+                    flags |= LightTick.Flags(type);
                 typeFlags.Add(type, flags);
             }
             return flags;

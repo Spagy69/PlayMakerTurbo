@@ -92,6 +92,8 @@ CInputAxisInvertedBuilder=1
 ActiveLists=1
 # Send events to the FSMs of one GameObject without walking all FSMs
 FastEventRouting=1
+# FSMs that only wait (Wait, MousePickEvent without a hit) get their waiting done without the rest of Fsm.Update
+LightTicks=1
 # Fsm.Active through isActiveAndEnabled. LEAVE OFF: not identical to the original.
 ActiveFast=0
 

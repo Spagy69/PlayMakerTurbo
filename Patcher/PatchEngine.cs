@@ -131,7 +131,7 @@ namespace PlayMakerTurboInstaller
             MakePublic(GetField(helpers, "mousePickLayerMaskUsed"));
 
             // Loop counter reset only when needed
-            FieldDefinition dirty = new FieldDefinition("turboLoopDirty", FieldAttributes.Assembly | FieldAttributes.NotSerialized, module.TypeSystem.Boolean);
+            FieldDefinition dirty = new FieldDefinition("turboLoopDirty", FieldAttributes.Public | FieldAttributes.NotSerialized, module.TypeSystem.Boolean);
             fsm.Fields.Add(dirty);
             MarkDirtyOnEnter(fsmState, dirty);
             RewriteUpdateStateChanges(module, fsm, fsmState, dirty);

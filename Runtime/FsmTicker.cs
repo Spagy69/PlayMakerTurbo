@@ -306,6 +306,8 @@ namespace PlayMakerTurbo
             frameNo++;
             // The original calls this at the top of every Fsm.Update; it only flips a static flag.
             FsmTime.RealtimeBugFix();
+            Core.UpdateDelta = Time.deltaTime;
+            Core.UpdateDeltaValid = true;
 
             if (!Core.ActiveLists || Fsm.HitBreakpoint)
             {
@@ -317,6 +319,7 @@ namespace PlayMakerTurbo
                     Sweep();
                 UpdateQueued();
             }
+            Core.UpdateDeltaValid = false;
             Core.TickerUpdateTicks += Stopwatch.GetTimestamp() - start;
         }
 
@@ -347,7 +350,8 @@ namespace PlayMakerTurbo
             if (e.UpdateFrame == frameNo)
                 return true;
             e.UpdateFrame = frameNo;
-            CallUpdate(fsm);
+            if (!TryLightTick(inner))
+                CallUpdate(fsm);
             return true;
         }
 
@@ -372,9 +376,15 @@ namespace PlayMakerTurbo
                 // because skipping is always correct and the Unity null check is the costlier test.
                 if (fsm == null)
                     continue;
-                CallUpdate(fsm);
+                if (!TryLightTick(inner))
+                    CallUpdate(fsm);
             }
             Array.Clear(snapshot, 0, count);
+        }
+
+        private static bool TryLightTick(Fsm inner)
+        {
+            return Core.LightTicks && LightTick.Ready() && LightTick.TryTick(inner, Core.UpdateDelta);
         }
 
         private static void CallUpdate(PlayMakerFSM fsm)

@@ -16,7 +16,7 @@ namespace PlayMakerTurboAddon
         {
             "IdleUpdateSkip", "LateUpdateSkip", "FixedUpdateSkip", "DelayedEventsEarlyOut", "GameObjectCache",
             "SkipNonUpdatingActions", "MousePickSingleCameraLookup", "SetGameVolumeSkipUnchanged", "PropertyDelegates",
-            "CInputAxisInvertedBuilder", "ActiveLists", "FastEventRouting", "MousePickFrameCache", "ActiveFast"
+            "CInputAxisInvertedBuilder", "ActiveLists", "FastEventRouting", "LightTicks", "MousePickFrameCache", "ActiveFast"
         };
 
         private static readonly string[] labels =
@@ -33,11 +33,12 @@ namespace PlayMakerTurboAddon
             "cInput stores inverted axis settings only when they change",
             "Tick only woken FSMs instead of walking all of them",
             "Send events to one GameObject without walking all FSMs",
+            "Light tick for FSMs that only wait (Wait, mouse over)",
             "Share mouse pick raycast in a frame (almost identical)",
             "Fsm.Active via isActiveAndEnabled (NOT identical)"
         };
 
-        private static readonly bool[] defaults = { true, true, true, true, true, true, true, true, true, true, true, true, false, false };
+        private static readonly bool[] defaults = { true, true, true, true, true, true, true, true, true, true, true, true, true, false, false };
 
         private static string iniPath;
         private static readonly Dictionary<string, SettingsCheckBox> boxes = new Dictionary<string, SettingsCheckBox>();

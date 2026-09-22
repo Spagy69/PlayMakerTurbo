@@ -55,6 +55,7 @@
     <Compile Include="PropertyAccess.cs" />
     <Compile Include="StaticField.cs" />
     <Compile Include="FsmTicker.cs" />
+    <Compile Include="LightTick.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
