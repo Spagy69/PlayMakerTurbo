@@ -5,8 +5,9 @@ namespace PlayMakerTurboInstaller
 {
     internal static class Program
     {
-        // Without arguments the window opens. With a path (and optionally --restore) it runs on the command
-        // line, which is what the build scripts use.
+        // Without arguments the window opens. With a path it runs on the command line: install, --restore to
+        // undo, or --patch-only to patch PlayMaker.dll without the runtime, which build.ps1 needs because the
+        // runtime is compiled against the patched PlayMaker.dll.
         [STAThread]
         private static int Main(string[] args)
         {
@@ -23,6 +24,8 @@ namespace PlayMakerTurboInstaller
             {
                 if (Array.IndexOf(args, "--restore") >= 0)
                     Installer.Uninstall(managed, Console.WriteLine);
+                else if (Array.IndexOf(args, "--patch-only") >= 0)
+                    PatchEngine.Patch(managed, Console.WriteLine);
                 else
                 {
                     Console.WriteLine(Installer.BetaNotice);

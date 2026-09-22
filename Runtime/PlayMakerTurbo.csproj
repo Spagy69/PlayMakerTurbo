@@ -13,7 +13,7 @@
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile>Unity Full v3.5</TargetFrameworkProfile>
     <LangVersion>13</LangVersion>
-    <ManagedPath>D:\SteamLibrary\steamapps\common\My Winter Car\mywintercar_Data\Managed</ManagedPath>
+    <ManagedPath Condition=" '$(ManagedPath)' == '' ">C:\Program Files (x86)\Steam\steamapps\common\My Winter Car\mywintercar_Data\Managed</ManagedPath>
     <!-- Must point at the PATCHED PlayMaker.dll (TurboUpdate, TurboFinished). -->
     <PlayMakerPath Condition=" '$(PlayMakerPath)' == '' ">$(ManagedPath)\PlayMaker.dll</PlayMakerPath>
   </PropertyGroup>

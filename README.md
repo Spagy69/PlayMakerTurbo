@@ -54,7 +54,10 @@ If a save got damaged, restoring the game files does not repair it. Only your ba
 
 ## Installing
 
-Unpack the release into one folder and keep `PlayMakerTurbo.dll` and the `Mono.Cecil*.dll` files next to
+Download the zip from [Releases](https://github.com/Spagy69/PlayMakerTurbo/releases). The repository itself
+holds only source code; if you want to build it yourself, see [Building from source](#building-from-source).
+
+Unpack the zip into one folder and keep `PlayMakerTurbo.dll` and the `Mono.Cecil*.dll` files next to
 `PlayMakerTurbo Installer.exe`.
 
 Close the game, run the installer, and press Install. The installer asks Steam where its libraries are and
@@ -153,27 +156,37 @@ Patches to the game's own actions and to `cInput.dll` are applied at runtime wit
 editing those files. `Assembly-CSharp.dll` changes with every game update, and a runtime patch survives that.
 When a patched method disappears after an update, the patch is skipped and a warning goes to the log.
 
-## Repository layout
+## Building from source
+
+You need:
+
+- Windows with Visual Studio 2022 and the .NET desktop development workload, which brings MSBuild and the
+  .NET SDK.
+- The Unity Full v3.5 reference profile, which the runtime targets. Visual Studio installs it with the Game
+  development with Unity workload, the same setup the MSCLoader mod template asks for. Check for the folder
+  `C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v3.5\Profile\Unity Full v3.5`.
+- My Winter Car with MSCLoader installed. The runtime links against `UnityEngine.dll`, `PlayMaker.dll`,
+  `Assembly-CSharp.dll`, `cInput.dll` and `0Harmony.dll` from the game's `Managed` folder. Those are game files
+  and are not part of this repository.
+
+Then run the build script from the repository folder:
 
 ```
-Patcher/     the installer (WinForms, .NET Framework 4.8, Mono.Cecil)
-Runtime/     PlayMakerTurbo.dll (C#, .NET 3.5, compiled against the patched PlayMaker.dll)
+powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-The runtime compiles against a patched `PlayMaker.dll`, so builds run in this order: build the installer,
-patch a copy of `PlayMaker.dll` with it, build the runtime against that copy, then ship the runtime next to
-the installer.
+It finds the game through Steam. If your game is somewhere else, add `-GamePath "E:\Games\My Winter Car"`.
+The finished release lands in `dist\`, and from there you install it like the downloaded zip.
 
-```
-dotnet build Patcher/Patcher.csproj -c Release
-"Patcher/bin/Release/net48/PlayMakerTurbo Installer.exe" <a folder holding a copy of PlayMaker.dll>
-msbuild Runtime/PlayMakerTurbo.csproj -p:Configuration=Release -p:PlayMakerPath=<that patched PlayMaker.dll>
-```
+The script reads the game files and never changes them. The order of its steps matters, because the runtime
+has to be compiled against the patched `PlayMaker.dll`:
 
-The runtime targets the Unity Full v3.5 profile, so it needs the reference assemblies that come with the
-MSCLoader Visual Studio template, and it links against `UnityEngine.dll`, `PlayMaker.dll`, `Assembly-CSharp.dll`,
-`cInput.dll` and `0Harmony.dll` from the game's `Managed` folder. Those are game files and are not part of
-this repository.
+1. Build the installer (`Patcher/`, WinForms, .NET Framework 4.8, Mono.Cecil from NuGet).
+2. Copy the original `PlayMaker.dll` into `obj\playmaker` and patch the copy with
+   `"PlayMakerTurbo Installer.exe" <folder> --patch-only`. If Turbo is already installed in the game, the
+   original is taken from `PlayMaker.dll.orig`.
+3. Build the runtime (`Runtime/`, .NET 3.5) with MSBuild against that patched copy.
+4. Copy the installer, the runtime, the Mono.Cecil files and the documents into `dist\`.
 
 ## The profiler
 
