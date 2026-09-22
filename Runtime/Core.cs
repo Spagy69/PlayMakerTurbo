@@ -21,6 +21,8 @@ namespace PlayMakerTurbo
         public static bool SetGameVolumeSkipUnchanged = true;
         public static bool PropertyDelegates = true;
         public static bool CInputAxisInvertedBuilder = true;
+        // The ticker walks only FSMs that were woken since they last had nothing to do, instead of all of them.
+        public static bool ActiveLists = true;
         // Profiler found 44 mismatches in 1.49M checks, so this stays off: not identical to the original.
         public static bool ActiveFast = false;
         // Almost identical, off by default: reuses this frame's mouse-pick raycast per layer mask. Differs from

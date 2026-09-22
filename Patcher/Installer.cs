@@ -88,6 +88,8 @@ SetGameVolumeSkipUnchanged=1
 PropertyDelegates=1
 # cInput stores the inverted axis settings only when they changed
 CInputAxisInvertedBuilder=1
+# Tick only FSMs that were woken (state entered, enabled, delayed event) instead of walking all of them
+ActiveLists=1
 # Fsm.Active through isActiveAndEnabled. LEAVE OFF: not identical to the original.
 ActiveFast=0
 

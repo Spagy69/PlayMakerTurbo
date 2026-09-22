@@ -103,7 +103,14 @@ namespace PlayMakerTurboInstaller
             RenameToPublic(playMakerFsm, "Update", "TurboUpdate");
             RenameToPublic(playMakerFsm, "LateUpdate", "TurboLateUpdate");
             RenameToPublic(fixedProxy, "FixedUpdate", "TurboFixedUpdate");
-            Prepend(GetMethod(playMakerFsm, "OnEnable"), il => new[] { il.Create(OpCodes.Call, StaticCall(ticker, "Ensure", module.TypeSystem.Void)) });
+            // Wake points: the ticker queues an FSM only when something can give it work (see FsmTicker).
+            playMakerFsm.Fields.Add(new FieldDefinition("turboEntry", FieldAttributes.Public | FieldAttributes.NotSerialized, module.TypeSystem.Object));
+            PrependThisCall(GetMethod(playMakerFsm, "OnEnable"), StaticCall(ticker, "Enabled", module.TypeSystem.Void, playMakerFsm));
+            PrependThisCall(GetMethod(playMakerFsm, "OnDisable"), StaticCall(ticker, "Disabled", module.TypeSystem.Void, playMakerFsm));
+            PrependThisCall(GetMethod(fsm, "Start"), StaticCall(ticker, "Wake", module.TypeSystem.Void, fsm));
+            PrependThisCall(GetMethod(fsm, "DelayedEvent", 2), StaticCall(ticker, "Wake", module.TypeSystem.Void, fsm));
+            PrependThisCall(GetMethod(fsm, "DelayedEvent", 3), StaticCall(ticker, "Wake", module.TypeSystem.Void, fsm));
+            PrependThisCall(GetMethod(fsmState, "ActivateActions", 1), StaticCall(ticker, "WakeState", module.TypeSystem.Void, fsmState));
             proxyBase.Attributes = (proxyBase.Attributes & ~TypeAttributes.VisibilityMask) | TypeAttributes.Public;
             fixedProxy.Attributes = (fixedProxy.Attributes & ~TypeAttributes.VisibilityMask) | TypeAttributes.Public;
             MakePublic(GetField(proxyBase, "playMakerFSMs"));
@@ -115,6 +122,8 @@ namespace PlayMakerTurboInstaller
             MakePublic(GetField(fsm, "switchToState"));
             MakePublic(GetField(fsm, "delayedEvents"));
             MakePublic(GetField(fsmState, "finished"));
+            MakePublic(GetField(fsmState, "fsm")); // the Fsm getter logs an error when it is null
+            MakePublic(GetField(playMakerFsm, "fsm")); // [SerializeField], stays serialized; the getter also rewrites Owner
             MakePublic(GetMethod(fsmState, "CheckAllActionsFinished"));
             MakePublic(GetMethod(fsmState, "set_StateTime", 1));
             MakePublic(GetField(helpers, "mousePickRaycastTime"));
@@ -235,6 +244,12 @@ namespace PlayMakerTurboInstaller
             Instruction first = method.Body.Instructions[0];
             foreach (Instruction instruction in build(il))
                 il.InsertBefore(first, instruction);
+        }
+
+        // Target(this); at the top of an instance method.
+        private static void PrependThisCall(MethodDefinition method, MethodReference target)
+        {
+            Prepend(method, il => new[] { il.Create(OpCodes.Ldarg_0), il.Create(OpCodes.Call, target) });
         }
 
         // Replaces the body with: return Target(this or args...);

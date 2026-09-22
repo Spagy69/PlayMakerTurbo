@@ -11,6 +11,13 @@ namespace PlayMakerTurbo
     // component separately. Unity's per-component call (native -> managed, with validity checks) costs more
     // than the work most idle FSMs do, and MWC has ~2000 of them. FSMs whose tick would provably do nothing
     // are skipped; see the *IsNoOp methods for the exact conditions.
+    //
+    // With ActiveLists on, the ticker does not walk all ~2000 FSMs in every phase to find the ones to skip. An FSM
+    // is queued when something can give it work: its component is enabled, it starts, one of its states activates
+    // actions (entering a state, or the next action of a sequence), or it gets a delayed event. The patched
+    // PlayMaker.dll calls Wake at exactly those points. The loops tick the queued FSMs and drop every one that the
+    // skip rules say has nothing to do; nothing but a wake can give it work again. Walking and skipping the whole
+    // list cost about 1.3 ms per frame, measured without the profiler.
     public class FsmTicker : MonoBehaviour
     {
         private static FsmTicker instance;
@@ -20,6 +27,12 @@ namespace PlayMakerTurbo
         private static PlayMakerFixedUpdate[] fixedSnapshot = new PlayMakerFixedUpdate[512];
         private static bool inFixedStep;
 
+        private static readonly List<Entry> updateList = new List<Entry>(2048);
+        private static readonly List<Entry> lateList = new List<Entry>(2048);
+        private static int frameNo;
+        private const int SweepInterval = 300;
+        private const int MaxMissedLogs = 20;
+
         // Read by MWCFsmProfiler through reflection.
         public static long UpdateCalls;
         public static long UpdateSkipped;
@@ -27,6 +40,28 @@ namespace PlayMakerTurbo
         public static long LateUpdateSkipped;
         public static long FixedUpdateCalls;
         public static long FixedUpdateSkipped;
+        public static long MissedWakes;     // FSMs the safety sweep found with work but not queued; should stay 0
+        public static long QueuedUpdate;    // FSMs walked by the Update loop (with ActiveLists on)
+        public static long QueuedLate;
+
+        // Time spent inside the FSM calls themselves, so the profiler can tell the loop's own cost (walking every
+        // FSM and deciding to skip it) from the work of the FSMs. Measured only while the profiler sets
+        // MeasureInner: two timestamps per call are cheap, but not free.
+        public static bool MeasureInner;
+        public static long UpdateInnerTicks;
+        public static long LateUpdateInnerTicks;
+        public static long FixedUpdateInnerTicks;
+
+        // Per-component state, stored in the field the patcher adds to PlayMakerFSM.
+        internal sealed class Entry
+        {
+            public PlayMakerFSM Component;
+            public bool Enabled;
+            public bool InUpdate;
+            public bool InLate;
+            public int UpdateFrame = -1;
+            public int LateFrame = -1;
+        }
 
         // Called by the patched PlayMakerFSM.OnEnable.
         public static void Ensure()
@@ -56,6 +91,68 @@ namespace PlayMakerTurbo
             }
         }
 
+        // ---- wake points, called by the patched PlayMaker.dll ----
+
+        // PlayMakerFSM.OnEnable, before its body: the component joins PlayMakerFSM.FsmList.
+        public static void Enabled(PlayMakerFSM component)
+        {
+            Ensure();
+            Entry e = GetEntry(component);
+            e.Enabled = true;
+            Queue(e);
+        }
+
+        // PlayMakerFSM.OnDisable, before its body: the component leaves FsmList. The loops drop it lazily.
+        public static void Disabled(PlayMakerFSM component)
+        {
+            GetEntry(component).Enabled = false;
+        }
+
+        // Fsm.Start and Fsm.DelayedEvent.
+        public static void Wake(Fsm fsm)
+        {
+            // Only the FSM a component owns is ticked; sub-FSMs run inside their parent's RunFSM action.
+            PlayMakerFSM component = fsm.Owner as PlayMakerFSM;
+            if (ReferenceEquals(component, null) || !ReferenceEquals(component.fsm, fsm))
+                return;
+            Queue(GetEntry(component));
+        }
+
+        // FsmState.ActivateActions: entering a state, or a sequence state starting its next action.
+        public static void WakeState(FsmState state)
+        {
+            Fsm fsm = state.fsm;
+            if (fsm != null)
+                Wake(fsm);
+        }
+
+        private static Entry GetEntry(PlayMakerFSM component)
+        {
+            Entry e = component.turboEntry as Entry;
+            if (e == null)
+            {
+                e = new Entry { Component = component };
+                component.turboEntry = e;
+            }
+            return e;
+        }
+
+        private static void Queue(Entry e)
+        {
+            if (!e.InUpdate)
+            {
+                e.InUpdate = true;
+                updateList.Add(e);
+            }
+            if (!e.InLate)
+            {
+                e.InLate = true;
+                lateList.Add(e);
+            }
+        }
+
+        // ---- fixed update proxies ----
+
         // Called by the OnEnable/OnDisable the patcher adds to PlayMakerFixedUpdate.
         public static void RegisterFixed(PlayMakerFixedUpdate proxy)
         {
@@ -70,12 +167,72 @@ namespace PlayMakerTurbo
                 removedThisStep.Add(proxy);
         }
 
+        // ---- Update ----
+
         private void Update()
         {
             long start = Stopwatch.GetTimestamp();
+            frameNo++;
             // The original calls this at the top of every Fsm.Update; it only flips a static flag.
             FsmTime.RealtimeBugFix();
 
+            if (!Core.ActiveLists || Fsm.HitBreakpoint)
+            {
+                UpdateAll();
+            }
+            else
+            {
+                if (frameNo % SweepInterval == 0)
+                    Sweep();
+                UpdateQueued();
+            }
+            Core.TickerUpdateTicks += Stopwatch.GetTimestamp() - start;
+        }
+
+        private static void UpdateQueued()
+        {
+            // Compacts in place. FSMs woken while this runs are appended and ticked in this same pass; the frame
+            // stamp keeps an FSM from being ticked twice.
+            int kept = 0;
+            for (int i = 0; i < updateList.Count; i++)
+            {
+                Entry e = updateList[i];
+                QueuedUpdate++;
+                if (TickUpdate(e))
+                    updateList[kept++] = e;
+                else
+                    e.InUpdate = false;
+            }
+            updateList.RemoveRange(kept, updateList.Count - kept);
+        }
+
+        // Returns false when the FSM has nothing to do until it is woken again.
+        private static bool TickUpdate(Entry e)
+        {
+            if (!e.Enabled)
+                return false;
+            PlayMakerFSM fsm = e.Component;
+            Fsm inner = fsm.fsm;
+            // Unity never calls Update before Start; Fsm.Start wakes it.
+            if (!inner.Started)
+                return false;
+
+            if (IdleUpdateSkipAllowed(inner))
+            {
+                UpdateSkipped++;
+                return false;
+            }
+
+            // No Unity null check: a component is disabled (OnDisable, which clears Enabled) before it is destroyed.
+            if (e.UpdateFrame == frameNo)
+                return true;
+            e.UpdateFrame = frameNo;
+            CallUpdate(fsm);
+            return true;
+        }
+
+        private static void UpdateAll()
+        {
             int count = TakeSnapshot();
             for (int i = 0; i < count; i++)
             {
@@ -95,24 +252,81 @@ namespace PlayMakerTurbo
                 // because skipping is always correct and the Unity null check is the costlier test.
                 if (fsm == null)
                     continue;
-
-                UpdateCalls++;
-                try
-                {
-                    fsm.TurboUpdate();
-                }
-                catch (Exception e)
-                {
-                    Debug.LogException(e, fsm);
-                }
+                CallUpdate(fsm);
             }
             Array.Clear(snapshot, 0, count);
-            Core.TickerUpdateTicks += Stopwatch.GetTimestamp() - start;
         }
+
+        private static void CallUpdate(PlayMakerFSM fsm)
+        {
+            UpdateCalls++;
+            long inner0 = MeasureInner ? Stopwatch.GetTimestamp() : 0L;
+            try
+            {
+                fsm.TurboUpdate();
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e, fsm);
+            }
+            if (inner0 != 0L)
+                UpdateInnerTicks += Stopwatch.GetTimestamp() - inner0;
+        }
+
+        // ---- LateUpdate ----
 
         private void LateUpdate()
         {
             long start = Stopwatch.GetTimestamp();
+            if (!Core.ActiveLists || Fsm.HitBreakpoint)
+                LateUpdateAll();
+            else
+                LateUpdateQueued();
+            FsmVariables.GlobalVariablesSynced = false;
+            Core.TickerLateUpdateTicks += Stopwatch.GetTimestamp() - start;
+        }
+
+        private static void LateUpdateQueued()
+        {
+            int kept = 0;
+            for (int i = 0; i < lateList.Count; i++)
+            {
+                Entry e = lateList[i];
+                QueuedLate++;
+                if (TickLate(e))
+                    lateList[kept++] = e;
+                else
+                    e.InLate = false;
+            }
+            lateList.RemoveRange(kept, lateList.Count - kept);
+        }
+
+        // Dropping on a no-op is safe because only a wake can make LateUpdate do something again: the active actions
+        // only shrink until ActivateActions runs, and a pending state switch is resolved inside the FSM's own tick.
+        private static bool TickLate(Entry e)
+        {
+            if (!e.Enabled)
+                return false;
+            PlayMakerFSM fsm = e.Component;
+            Fsm inner = fsm.fsm;
+            if (!inner.Started || inner.Finished)
+                return false;
+
+            if (Core.LateUpdateSkip && CallbackIsNoOp(inner, Core.FlagLateUpdate))
+            {
+                LateUpdateSkipped++;
+                return false;
+            }
+
+            if (e.LateFrame == frameNo)
+                return true;
+            e.LateFrame = frameNo;
+            CallLate(fsm);
+            return true;
+        }
+
+        private static void LateUpdateAll()
+        {
             int count = TakeSnapshot();
             for (int i = 0; i < count; i++)
             {
@@ -129,21 +343,59 @@ namespace PlayMakerTurbo
 
                 if (fsm == null)
                     continue;
-
-                LateUpdateCalls++;
-                try
-                {
-                    fsm.TurboLateUpdate();
-                }
-                catch (Exception e)
-                {
-                    Debug.LogException(e, fsm);
-                }
+                CallLate(fsm);
             }
             Array.Clear(snapshot, 0, count);
-            FsmVariables.GlobalVariablesSynced = false;
-            Core.TickerLateUpdateTicks += Stopwatch.GetTimestamp() - start;
         }
+
+        private static void CallLate(PlayMakerFSM fsm)
+        {
+            LateUpdateCalls++;
+            long inner0 = MeasureInner ? Stopwatch.GetTimestamp() : 0L;
+            try
+            {
+                fsm.TurboLateUpdate();
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e, fsm);
+            }
+            if (inner0 != 0L)
+                LateUpdateInnerTicks += Stopwatch.GetTimestamp() - inner0;
+        }
+
+        // ---- safety sweep ----
+
+        // Every few seconds, check every enabled FSM against the queues. An FSM that has work but is not queued
+        // means a wake point is missing: it is queued now and reported, so the gap can be fixed.
+        private static void Sweep()
+        {
+            int count = TakeSnapshot();
+            for (int i = 0; i < count; i++)
+            {
+                PlayMakerFSM fsm = snapshot[i];
+                Entry e = GetEntry(fsm);
+                e.Enabled = true; // it is in FsmList, so it is enabled
+                Fsm inner = fsm.Fsm;
+                if (!inner.Started)
+                    continue;
+                bool missUpdate = !e.InUpdate && !IdleUpdateSkipAllowed(inner);
+                bool missLate = !e.InLate && !inner.Finished && !(Core.LateUpdateSkip && CallbackIsNoOp(inner, Core.FlagLateUpdate));
+                if (!missUpdate && !missLate)
+                    continue;
+
+                MissedWakes++;
+                if (MissedWakes <= MaxMissedLogs)
+                {
+                    FsmState state = inner.ActiveState;
+                    Debug.LogWarning($"PlayMakerTurbo: FSM '{inner.Name}' on '{fsm.name}' (state '{(state != null ? state.Name : "-")}') had {(missUpdate ? "Update" : "LateUpdate")} work but was not queued. Queued now. Please report this.");
+                }
+                Queue(e);
+            }
+            Array.Clear(snapshot, 0, count);
+        }
+
+        // ---- FixedUpdate ----
 
         private void FixedUpdate()
         {
@@ -179,26 +431,34 @@ namespace PlayMakerTurbo
             Core.TickerFixedUpdateTicks += Stopwatch.GetTimestamp() - start;
         }
 
-        // Same loop as PlayMakerFixedUpdate.FixedUpdate, minus FSMs whose FixedUpdate would do nothing.
+        // Same loop as PlayMakerFixedUpdate.FixedUpdate, minus FSMs whose FixedUpdate would do nothing. The
+        // original tests fsm.Active first, which asks the engine several times; the managed tests go first here
+        // because an FSM that fails them is not called either way.
         private static void TickProxy(PlayMakerFixedUpdate proxy)
         {
             PlayMakerFSM[] fsms = proxy.playMakerFSMs;
             for (int i = 0; i < fsms.Length; i++)
             {
                 PlayMakerFSM fsm = fsms[i];
-                if (fsm.Active && fsm.Fsm.HandleFixedUpdate)
+                Fsm inner = fsm.Fsm;
+                if (!inner.HandleFixedUpdate)
+                    continue;
+                if (CallbackIsNoOp(inner, Core.FlagFixedUpdate))
                 {
-                    Fsm inner = fsm.Fsm;
-                    if (CallbackIsNoOp(inner, Core.FlagFixedUpdate))
-                    {
-                        FixedUpdateSkipped++;
-                        continue;
-                    }
-                    FixedUpdateCalls++;
-                    inner.FixedUpdate();
+                    FixedUpdateSkipped++;
+                    continue;
                 }
+                if (!fsm.Active)
+                    continue;
+                FixedUpdateCalls++;
+                long inner0 = MeasureInner ? Stopwatch.GetTimestamp() : 0L;
+                inner.FixedUpdate();
+                if (inner0 != 0L)
+                    FixedUpdateInnerTicks += Stopwatch.GetTimestamp() - inner0;
             }
         }
+
+        // ---- shared ----
 
         private static int TakeSnapshot()
         {

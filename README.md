@@ -119,6 +119,17 @@ than one step, readonly fields, enums and static members also take the original 
 every frame. The original rebuilds a string one axis at a time and writes it to PlayerPrefs, which on Windows
 is a registry write and costs around 40 microseconds. Turbo writes only when the axis states changed.
 
+`ActiveLists` stops the ticker from walking all of the roughly 2000 FSMs in every phase just to skip most of
+them. The ticker keeps a queue for `Update` and one for `LateUpdate`, and an FSM joins them only when something
+can give it work: its component is enabled, it starts, one of its states activates actions (entering a state,
+or the next action of a sequence state), or it gets a delayed event. The patched `PlayMaker.dll` calls the
+ticker at exactly those points. An FSM that the skip rules above say has nothing to do leaves the queue until
+the next wake. Measured without the profiler, the `LateUpdate` loop dropped from 0.51 to 0.09 ms per frame
+while walking 110 FSMs instead of 2080. The `Update` loop stayed at about 0.6 ms, because more than 1000 FSMs
+really do work there every frame. Every 300 frames the ticker still checks all FSMs against the queues; an FSM
+that has work but is not queued would be queued and reported in the log as a missed wake. In testing there were
+none. With `ActiveLists=0` the ticker walks every FSM as before.
+
 ### The two options that are not bit identical
 
 `ActiveFast` computes `Fsm.Active` through `isActiveAndEnabled`, one engine call instead of four. While
@@ -151,6 +162,10 @@ What the patch changes:
 - `Fsm.UpdateStateChanges` is rewritten to reset every state's loop counter only when some state was entered
   since the last reset. `FsmState.OnEnter` sets the flag, and it is the only place where the counter grows.
 - `Fsm.UpdateDelayedEvents` gets an early return at the top.
+- `PlayMakerFSM.OnEnable` and `OnDisable`, `Fsm.Start`, both `Fsm.DelayedEvent` overloads and
+  `FsmState.ActivateActions` call the ticker first, so it knows when an FSM may have work again. `PlayMakerFSM`
+  gets a non serialized `turboEntry` field for the ticker's bookkeeping, and its serialized `fsm` field becomes
+  public so the ticker can read it without the property, which also rewrites the owner.
 
 Two serialization rules shape the patch. Unity serializes public fields, so fields that became public for the
 ticker are marked `[NonSerialized]`, which keeps saved scenes and `Instantiate` copies identical. PlayMaker

@@ -14,6 +14,7 @@ namespace MWCFsmProfiler
         private static readonly Dictionary<string, long> atStart = new Dictionary<string, long>();
 
         public static bool Installed => ticker != null && core != null;
+        public static double LastLoopMs;
 
         public static void Start()
         {
@@ -24,6 +25,15 @@ namespace MWCFsmProfiler
             foreach (FieldInfo field in Counters())
                 atStart[field.Name] = (long)field.GetValue(null);
             SetValidateActive(true);
+            SetMeasureInner(true);
+        }
+
+        // Turbo 1.1.0 and older have no MeasureInner; then the loop split below is simply not reported.
+        private static void SetMeasureInner(bool value)
+        {
+            FieldInfo f = ticker.GetField("MeasureInner", BindingFlags.Public | BindingFlags.Static);
+            if (f != null)
+                f.SetValue(null, value);
         }
 
         public static string Stop(int frames)
@@ -32,16 +42,29 @@ namespace MWCFsmProfiler
                 return "PlayMakerTurbo: not installed";
 
             SetValidateActive(false);
+            SetMeasureInner(false);
             StringBuilder sb = new StringBuilder("PlayMakerTurbo counters (per frame):");
+            Dictionary<string, double> ms = new Dictionary<string, double>();
             foreach (FieldInfo field in Counters())
             {
                 long start;
                 atStart.TryGetValue(field.Name, out start);
                 long delta = (long)field.GetValue(null) - start;
+                ms[field.Name] = delta * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames;
                 if (field.Name.EndsWith("Ticks"))
                     sb.Append($"\n  {field.Name,-22} {delta * 1000.0 / System.Diagnostics.Stopwatch.Frequency / frames,10:F3} ms/frame");
                 else
                     sb.Append($"\n  {field.Name,-22} {(double)delta / frames,10:F1}   (total {delta})");
+            }
+            // The ticker's own cost: the whole loop minus the time inside the FSM calls it made.
+            LastLoopMs = 0;
+            foreach (string phase in new[] { "Update", "LateUpdate", "FixedUpdate" })
+            {
+                double total, inner;
+                if (!ms.TryGetValue("Ticker" + phase + "Ticks", out total) || !ms.TryGetValue(phase + "InnerTicks", out inner) || inner <= 0)
+                    continue;
+                LastLoopMs += total - inner;
+                sb.Append($"\n  {"Ticker" + phase + " loop",-22} {total - inner,10:F3} ms/frame   (walking and skipping FSMs, without their work)");
             }
             sb.Append("\n  settings: ").Append(SettingsLine());
             return sb.ToString();
