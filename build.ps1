@@ -80,5 +80,6 @@ Copy-Item (Join-Path $root 'Profiler\README.md') $profilerDist -Force
 $addonDist = Join-Path $dist 'Addon'
 New-Item -ItemType Directory $addonDist -Force | Out-Null
 Copy-Item (Join-Path $root 'Addon\bin\Release\PlayMakerTurboAddon.dll') $addonDist -Force
+Copy-Item (Join-Path $root 'Addon\README.md') $addonDist -Force
 
 Write-Host "Done. The release is in $dist"

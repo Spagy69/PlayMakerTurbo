@@ -12,6 +12,10 @@ Turbo patches `PlayMaker.dll` so the same work costs less. Everything enabled by
 result as stock PlayMaker: no objects are disabled, no logic is time sliced, no FSM is put to sleep. Two
 options behave differently in rare edge cases; they are off by default and described below.
 
+Slow spots in the game's own C# code are not Turbo's business, because they are not in `PlayMaker.dll`. The
+[addon](#the-addon), a separate MSCLoader mod in the same release, fixes four of them, among them the freeze
+when you first get into a car.
+
 Tested on My Winter Car with MSCLoader 1.4.2 (build 410), PlayMaker 1.7.7.6, on a Ryzen 5 8645HS with an
 RTX 4060 Laptop.
 
@@ -50,8 +54,8 @@ Things that can go wrong, and what to do about them:
 
 - The game does not start or freezes while loading. Press Restore original game in the installer.
 - Something in the world stops working: a door does not open, an item cannot be picked up, a car part does
-  not react. Turn the options in `PlayMakerTurbo.ini` off one by one until it works again, then report which
-  option it was in [Issues](https://github.com/Spagy69/PlayMakerTurbo/issues).
+  not react. Turn the options in `PlayMakerTurbo.ini` (or on the addon's settings page) off one by one until it
+  works again, then report which option it was in [Issues](https://github.com/Spagy69/PlayMakerTurbo/issues).
 - The game updated and now crashes. Run the installer again, it patches the new `PlayMaker.dll`.
 
 If a save got damaged, restoring the game files does not repair it. Only your backup does.
@@ -79,11 +83,15 @@ a different `PlayMaker.dll`, refreshes the backup from it and patches that.
 
 The installer also works from a command line: pass the game path to install, add `--restore` to undo.
 
+The release has two optional MSCLoader mods next to the installer. To use them, copy `Addon\PlayMakerTurboAddon.dll`
+and `Profiler\MWCFsmProfiler.dll` into the game's `Mods` folder.
+
 ## Settings
 
 Everything is switched in `mywintercar_Data\Managed\PlayMakerTurbo.ini`, one line per optimization, `1` for on
 and `0` for off. The file is read when the game starts. If something misbehaves, turn entries off one by one
-to find which one is responsible.
+to find which one is responsible. With the addon installed, the same switches are also checkboxes on its settings
+page in MSCLoader; they write to this file.
 
 `IdleUpdateSkip` skips `Fsm.Update` for FSMs whose active state has finished its actions, with no state switch
 pending and no delayed event waiting. In stock PlayMaker such a call walks an empty loop and returns.
@@ -124,11 +132,29 @@ them. The ticker keeps a queue for `Update` and one for `LateUpdate`, and an FSM
 can give it work: its component is enabled, it starts, one of its states activates actions (entering a state,
 or the next action of a sequence state), or it gets a delayed event. The patched `PlayMaker.dll` calls the
 ticker at exactly those points. An FSM that the skip rules above say has nothing to do leaves the queue until
-the next wake. Measured without the profiler, the `LateUpdate` loop dropped from 0.51 to 0.09 ms per frame
-while walking 110 FSMs instead of 2080. The `Update` loop stayed at about 0.6 ms, because more than 1000 FSMs
-really do work there every frame. Every 300 frames the ticker still checks all FSMs against the queues; an FSM
-that has work but is not queued would be queued and reported in the log as a missed wake. In testing there were
-none. With `ActiveLists=0` the ticker walks every FSM as before.
+the next wake. The queues are visited in the order the FSMs were enabled, which is the order of
+`PlayMakerFSM.FsmList` and the order in which Unity calls the components. An FSM woken by another one is ticked in
+the same frame only if the walk has not passed it yet, otherwise in the next frame, exactly like the full walk.
+Ticking it again in the same frame would run its new state's `OnUpdate` in the frame of its `OnEnter`, and the
+game reads a mouse click twice: car parts then snap back on right after you take them off. Measured without the
+profiler, the `LateUpdate` loop dropped from 0.51 to 0.09 ms per frame while walking 110 FSMs instead of 2080.
+The `Update` loop stayed at about 0.6 ms, because more than 1000 FSMs really do work there every frame. Every
+300 frames the ticker still checks all FSMs against the queues; an FSM that has work but is not queued would be
+queued and reported in the log as a missed wake. In testing there were none. With `ActiveLists=0` the ticker
+walks every FSM.
+
+`FastEventRouting` changes how an event reaches the FSMs of one GameObject, which is what `SendEvent` and
+`SendEventByName` do when their target is a GameObject or an FSM on it. The original walks all of
+`PlayMakerFSM.FsmList`, about 2000 FSMs, asks the engine twice for each, allocates a new list, and does it all
+again for every child when the event goes to children too. Turbo reads the target GameObject's own
+`PlayMakerFSM` components, keeps the enabled ones and sorts them into `FsmList` order, so the same FSMs get the
+event in the same order. Pressing the light switch on a car dashboard cost 530 µs and 18 KB of garbage with the
+original and 80 µs with no garbage with Turbo. `BroadcastEvent`, which sends to every FSM in the game, keeps its
+walk and only reuses a buffer instead of copying `FsmList` into a new list each time.
+
+`ValidateEventRouting` is a debugging switch and is not in the default file. With `ValidateEventRouting=1`
+every event sent to a GameObject is also routed the original way, and any difference in the receivers goes to
+the log. A test session with car part assembly found none.
 
 ### The two options that are not bit identical
 
@@ -140,7 +166,8 @@ an object is being deactivated. That is why it stays off.
 too, but only for a single mask, so `Use` FSMs with different masks keep overwriting each other's result.
 With the cache on, raycasts dropped from 203 to 17 per frame and `fpstest` gained about 8 FPS. The result
 differs from the original only when the camera or a collider moves between two picks inside the same frame.
-It ships off; turning it on is worth it.
+Car part assembly, which picks while you move a part in front of the camera, worked normally with it on. It
+ships off; turning it on is worth it.
 
 ## How it works
 
@@ -166,6 +193,11 @@ What the patch changes:
   `FsmState.ActivateActions` call the ticker first, so it knows when an FSM may have work again. `PlayMakerFSM`
   gets a non serialized `turboEntry` field for the ticker's bookkeeping, and its serialized `fsm` field becomes
   public so the ticker can read it without the property, which also rewrites the owner.
+- `Fsm.BroadcastEventToGameObject`, `Fsm.SendEventToFsmOnGameObject` and `Fsm.BroadcastEvent` forward into
+  `PlayMakerTurbo.EventRouting`, with the original bodies kept as `TurboOriginal...` for when the switch is off.
+  Calls from inside `PlayMaker.dll`, such as the one in `Fsm.Event`, are pointed at the forwarding methods too.
+  Other assemblies find a method by its name, but inside one assembly a call refers to the method itself, so
+  without this step the game's own actions would still reach the renamed originals.
 
 Two serialization rules shape the patch. Unity serializes public fields, so fields that became public for the
 ticker are marked `[NonSerialized]`, which keeps saved scenes and `Instantiate` copies identical. PlayMaker
@@ -209,8 +241,12 @@ has to be compiled against the patched `PlayMaker.dll`:
    original is taken from `PlayMaker.dll.orig`.
 3. Build the runtime (`Runtime/`, .NET 3.5) with MSBuild against that patched copy.
 4. Build the profiler mod (`Profiler/`, .NET 3.5). It does not need the patched `PlayMaker.dll`.
-5. Copy the installer, the runtime, the Mono.Cecil files and the documents into `dist\`, and the profiler with
-   its README into `dist\Profiler\`.
+5. Build the addon mod (`Addon/`, .NET 3.5), which needs `cInput.dll` and `MSCLoader.dll` from the game as well.
+6. Copy the installer, the runtime, the Mono.Cecil files and the documents into `dist\`, the profiler with
+   its README into `dist\Profiler\` and the addon into `dist\Addon\`.
+
+If the environment variable `MWCMODSFOLDER` points at the game's `Mods` folder, the profiler and addon builds
+also copy their DLLs there.
 
 ## The profiler
 
@@ -219,6 +255,15 @@ repository and of the release zip. It times every FSM, state, action, event, scr
 into its phases, tracks allocations down to the code that makes them, keeps traces of spike frames, and runs
 A/B benchmarks of Turbo's options with statistics. It works without Turbo too. See
 [Profiler/README.md](Profiler/README.md).
+
+## The addon
+
+PlayMaker Turbo Addon is an MSCLoader mod in the `Addon` folder, for the slow spots the profiler found outside
+PlayMaker. It sets up force feedback once while loading, which removes a freeze of about 185 ms when you first get
+into a car. It switches off cInput's key binding GUI while that menu is closed, skips the suspension IK of cars
+that are not moving, and stops cars from recomputing their mass on every physics step. Each fix can be turned off
+on its settings page, which also holds Turbo's switches. It works without Turbo. See
+[Addon/README.md](Addon/README.md).
 
 ## What Turbo does not do
 
@@ -238,8 +283,8 @@ the setting that moves that number the most.
 
 The code and this documentation were written by an AI, Claude (Anthropic), working in Claude Code. I directed
 the work, decided what the patch may and may not change, ran the game and took every measurement in this
-README. The AI analysed the decompiled PlayMaker, wrote the installer, the runtime and the profiler mod, and
-fixed what my test runs turned up. Keep that in mind when you read the code, and treat it as beta for that
+README. The AI analysed the decompiled PlayMaker, wrote the installer, the runtime, the profiler mod and the
+addon, and fixed what my test runs turned up. Keep that in mind when you read the code, and treat it as beta for that
 reason too.
 
 ## Licence
