@@ -1,4 +1,4 @@
-# Builds the installer, the runtime and the profiler mod and puts a ready release into dist\.
+# Builds the installer, the runtime, the profiler mod and the addon mod and puts a ready release into dist\.
 #
 #   .\build.ps1                                   finds the game through Steam
 #   .\build.ps1 -GamePath "E:\Games\My Winter Car"
@@ -61,7 +61,11 @@ if ($LASTEXITCODE) { throw 'Runtime build failed.' }
 & $msbuild (Join-Path $root 'Profiler\MWCFsmProfiler.csproj') -p:Configuration=Release "-p:ManagedPath=$managed" -v:m -nologo
 if ($LASTEXITCODE) { throw 'Profiler build failed.' }
 
-# 5. Release folder
+# 5. Addon mod (fixes in the game's own scripts, independent of the PlayMaker patch)
+& $msbuild (Join-Path $root 'Addon\PlayMakerTurboAddon.csproj') -p:Configuration=Release "-p:ManagedPath=$managed" -v:m -nologo
+if ($LASTEXITCODE) { throw 'Addon build failed.' }
+
+# 6. Release folder
 $dist = Join-Path $root 'dist'
 New-Item -ItemType Directory $dist -Force | Out-Null
 foreach ($name in 'PlayMakerTurbo Installer.exe', 'PlayMakerTurbo Installer.exe.config', 'Mono.Cecil.dll', 'Mono.Cecil.Mdb.dll', 'Mono.Cecil.Pdb.dll', 'Mono.Cecil.Rocks.dll') {
@@ -73,5 +77,8 @@ $profilerDist = Join-Path $dist 'Profiler'
 New-Item -ItemType Directory $profilerDist -Force | Out-Null
 Copy-Item (Join-Path $root 'Profiler\bin\Release\MWCFsmProfiler.dll') $profilerDist -Force
 Copy-Item (Join-Path $root 'Profiler\README.md') $profilerDist -Force
+$addonDist = Join-Path $dist 'Addon'
+New-Item -ItemType Directory $addonDist -Force | Out-Null
+Copy-Item (Join-Path $root 'Addon\bin\Release\PlayMakerTurboAddon.dll') $addonDist -Force
 
 Write-Host "Done. The release is in $dist"
