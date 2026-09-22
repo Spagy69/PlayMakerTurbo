@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>PlayMakerTurbo Installer</AssemblyName>
+    <RootNamespace>PlayMakerTurboInstaller</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Product>PlayMaker Turbo</Product>
+    <AssemblyTitle>PlayMaker Turbo Installer</AssemblyTitle>
+    <Version>1.0.0-beta</Version>
+    <Copyright>Copyright (c) 2026 Vít Machač</Copyright>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="MainForm.cs" />
+    <Compile Include="Installer.cs" />
+    <Compile Include="GameLocator.cs" />
+    <Compile Include="PatchEngine.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+  </ItemGroup>
+
+</Project>

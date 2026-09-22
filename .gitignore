@@ -1,0 +1,10 @@
+bin/
+obj/
+dist/
+*.user
+*.suo
+.vs/
+
+# Decompiled game and mod code, kept locally for reference only. Not ours to publish.
+decompiled/
+ref/
