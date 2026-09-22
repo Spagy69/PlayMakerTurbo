@@ -14,7 +14,7 @@ namespace MWCFsmProfiler
         public override string ID => "MWCFsmProfiler";
         public override string Name => "FSM Profiler";
         public override string Author => "Spagy";
-        public override string Version => "2.0";
+        public override string Version => "2.1";
         public override string Description => "Measures where every millisecond of a frame goes: FSMs, states, actions, events, scripts, mods, physics, rendering, GC. F9 full, F10 light, F11 trace.";
         public override Game SupportedGames => Game.MyWinterCar;
 

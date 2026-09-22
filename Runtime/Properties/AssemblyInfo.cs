@@ -10,4 +10,4 @@ using System.Runtime.InteropServices;
 // The patched PlayMaker.dll references exactly this version, keep it in sync with the patcher.
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
-[assembly: AssemblyInformationalVersion("1.1.0-beta")]
+[assembly: AssemblyInformationalVersion("1.2.0-beta")]

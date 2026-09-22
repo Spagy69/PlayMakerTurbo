@@ -36,6 +36,9 @@ The profiler's A/B benchmark, which switches one option off and on in 10 second 
 time, weather and traffic frozen, puts the mouse pick cache at 0.87 ms per frame (95% interval 0.85 to 0.90 ms),
 about 105 to 116 FPS at that spot.
 
+These numbers were taken before `ActiveLists`, `FastEventRouting`, `LightTicks` and the addon existed. A new
+A/B benchmark with all of them will follow.
+
 The profiler also counts what gets skipped. In a typical frame about 900 of 1880 `Update` calls, 95 percent
 of `LateUpdate` calls and 98 percent of `FixedUpdate` calls are skipped because the FSM would provably do
 nothing in them.
@@ -58,12 +61,21 @@ Things that can go wrong, and what to do about them:
   works again, then report which option it was in [Issues](https://github.com/Spagy69/PlayMakerTurbo/issues).
 - The game updated and now crashes. Run the installer again, it patches the new `PlayMaker.dll`.
 
-If a save got damaged, restoring the game files does not repair it. Only your backup does.
+Restoring the game files does not touch your save. If a save got damaged, copy your backup back in its place.
 
 ## Installing
 
-Download the zip from [Releases](https://github.com/Spagy69/PlayMakerTurbo/releases). The repository itself
+Download a zip from [Releases](https://github.com/Spagy69/PlayMakerTurbo/releases). The repository itself
 holds only source code; if you want to build it yourself, see [Building from source](#building-from-source).
+Each release has five zips:
+
+| zip | contents |
+|---|---|
+| `players` | the Turbo installer and the addon, with a short guide. Take this one if you just want the game faster. |
+| `full` | everything: Turbo, the addon, the profiler and all documentation |
+| `turbo` | only the Turbo installer |
+| `addon` | only the addon mod |
+| `profiler` | only the profiler mod |
 
 Unpack the zip into one folder and keep `PlayMakerTurbo.dll` and the `Mono.Cecil*.dll` files next to
 `PlayMakerTurbo Installer.exe`.
@@ -151,6 +163,17 @@ again for every child when the event goes to children too. Turbo reads the targe
 event in the same order. Pressing the light switch on a car dashboard cost 530 µs and 18 KB of garbage with the
 original and 80 µs with no garbage with Turbo. `BroadcastEvent`, which sends to every FSM in the game, keeps its
 walk and only reuses a buffer instead of copying `FsmList` into a new list each time.
+
+`LightTicks` handles the FSMs that only wait. About 300 `Use` FSMs sit in a state whose only action is
+`MousePickEvent`, which asks every frame whether the player is looking at the item, and many others wait in a
+state with a lone `Wait`. The action costs about 1 µs; the `Fsm.Update` around it (execution stack, owner check,
+action loop, finished check, state change loop) costs two or three times that. For such an FSM the ticker does,
+at the FSM's own place in the walk, only what that `Update` would change: it adds `deltaTime` to the state time
+and to each `Wait` timer with the same float operations, and runs each pick and its `RaycastHitInfo` write in
+order. As soon as the `Update` would do anything more (a `Wait` runs out, the mouse is over the object, a
+`mouseOff` event is set, an event or state switch is pending), the normal `Fsm.Update` runs instead. In the
+profiler about 380 FSMs per frame took this path, and PlayMaker's own time fell from 1.53 to 0.70 ms per frame.
+If a game update changes `Wait` or `MousePickEvent`, light ticks switch themselves off and say so in the log.
 
 `ValidateEventRouting` is a debugging switch and is not in the default file. With `ValidateEventRouting=1`
 every event sent to a GameObject is also routed the original way, and any difference in the receivers goes to
@@ -247,6 +270,8 @@ has to be compiled against the patched `PlayMaker.dll`:
 
 If the environment variable `MWCMODSFOLDER` points at the game's `Mods` folder, the profiler and addon builds
 also copy their DLLs there.
+
+`package.ps1 -Version 1.2.0-beta` packs `dist\` into the five release zips in `release\`.
 
 ## The profiler
 
