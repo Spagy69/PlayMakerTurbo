@@ -27,8 +27,8 @@ namespace PlayMakerTurbo
         private static PlayMakerFixedUpdate[] fixedSnapshot = new PlayMakerFixedUpdate[512];
         private static bool inFixedStep;
 
-        private static readonly List<Entry> updateList = new List<Entry>(2048);
-        private static readonly List<Entry> lateList = new List<Entry>(2048);
+        private static readonly TickQueue updateQueue = new TickQueue(false);
+        private static readonly TickQueue lateQueue = new TickQueue(true);
         private static int frameNo;
         private static long enableCounter;
         private const int SweepInterval = 300;
@@ -63,6 +63,134 @@ namespace PlayMakerTurbo
             public int UpdateFrame = -1;
             public int LateFrame = -1;
             public long EnableSeq;   // order of the last enable = order in PlayMakerFSM.FsmList
+            public long UpdateRunSeq; // EnableSeq when the entry was put into the sorted run of each queue
+            public long LateRunSeq;
+        }
+
+        // FSMs to tick, visited in FsmList order like the original, which walked FsmList (and Unity calls the
+        // components in the order they were enabled). The rule the original follows: an FSM is ticked when the walk
+        // reaches it and it has work at that moment. An FSM woken by another one later in the same frame is ticked
+        // this frame only if the walk has not passed it yet; otherwise it waits for the next frame. Ticking it again
+        // would run its new state's OnUpdate in the same frame as its OnEnter (a click read twice, for example).
+        //
+        // The run holds the FSMs kept from the last pass, sorted by EnableSeq. New ones go to the tail and are merged
+        // in by EnableSeq, so a pass sorts only the few FSMs woken since the last one.
+        private sealed class TickQueue
+        {
+            private readonly bool late;
+            private List<Entry> run = new List<Entry>(2048);
+            private List<Entry> next = new List<Entry>(2048);
+            private readonly List<Entry> tail = new List<Entry>(256);
+            private readonly List<Entry> pending = new List<Entry>(256);
+            private readonly List<Entry> carry = new List<Entry>(256);
+
+            public TickQueue(bool late)
+            {
+                this.late = late;
+            }
+
+            public void Add(Entry e)
+            {
+                tail.Add(e);
+            }
+
+            public void Pass()
+            {
+                // FSMs enabled from here on joined FsmList after the original took its snapshot for this frame.
+                long maxSeq = enableCounter;
+                long cursor = long.MinValue;
+                int i = 0;
+                int absorbed = 0;
+                next.Clear();
+                carry.Clear();
+                pending.Clear();
+
+                while (true)
+                {
+                    while (absorbed < tail.Count)
+                        Route(tail[absorbed++], cursor, maxSeq);
+
+                    // An FSM disabled and enabled again since it was sorted in has moved to the end of FsmList.
+                    while (i < run.Count && RunSeq(run[i]) != run[i].EnableSeq)
+                        Route(run[i++], cursor, maxSeq);
+
+                    Entry e;
+                    if (i < run.Count && (pending.Count == 0 || run[i].EnableSeq <= pending[0].EnableSeq))
+                    {
+                        e = run[i++];
+                    }
+                    else if (pending.Count > 0)
+                    {
+                        e = pending[0];
+                        pending.RemoveAt(0);
+                    }
+                    else
+                    {
+                        break;
+                    }
+
+                    cursor = e.EnableSeq;
+                    if (late ? TickLate(e) : TickUpdate(e))
+                    {
+                        SetRunSeq(e, e.EnableSeq);
+                        next.Add(e);
+                    }
+                    else
+                    {
+                        SetQueued(e, false);
+                    }
+                }
+
+                tail.Clear();
+                tail.AddRange(carry);
+                List<Entry> swap = run;
+                run = next;
+                next = swap;
+                next.Clear();
+            }
+
+            // A woken FSM the walk has not reached yet is ticked in this pass at its place; one it has passed, or
+            // one enabled during the pass, waits for the next pass.
+            private void Route(Entry e, long cursor, long maxSeq)
+            {
+                if (!e.Enabled)
+                {
+                    SetQueued(e, false);
+                    return;
+                }
+                if (e.EnableSeq > cursor && e.EnableSeq <= maxSeq)
+                {
+                    int at = pending.Count;
+                    while (at > 0 && pending[at - 1].EnableSeq > e.EnableSeq)
+                        at--;
+                    pending.Insert(at, e);
+                }
+                else
+                {
+                    carry.Add(e);
+                }
+            }
+
+            private long RunSeq(Entry e)
+            {
+                return late ? e.LateRunSeq : e.UpdateRunSeq;
+            }
+
+            private void SetRunSeq(Entry e, long seq)
+            {
+                if (late)
+                    e.LateRunSeq = seq;
+                else
+                    e.UpdateRunSeq = seq;
+            }
+
+            private void SetQueued(Entry e, bool queued)
+            {
+                if (late)
+                    e.InLate = queued;
+                else
+                    e.InUpdate = queued;
+            }
         }
 
         // Called by the patched PlayMakerFSM.OnEnable.
@@ -145,12 +273,12 @@ namespace PlayMakerTurbo
             if (!e.InUpdate)
             {
                 e.InUpdate = true;
-                updateList.Add(e);
+                updateQueue.Add(e);
             }
             if (!e.InLate)
             {
                 e.InLate = true;
-                lateList.Add(e);
+                lateQueue.Add(e);
             }
         }
 
@@ -194,24 +322,13 @@ namespace PlayMakerTurbo
 
         private static void UpdateQueued()
         {
-            // Compacts in place. FSMs woken while this runs are appended and ticked in this same pass; the frame
-            // stamp keeps an FSM from being ticked twice.
-            int kept = 0;
-            for (int i = 0; i < updateList.Count; i++)
-            {
-                Entry e = updateList[i];
-                QueuedUpdate++;
-                if (TickUpdate(e))
-                    updateList[kept++] = e;
-                else
-                    e.InUpdate = false;
-            }
-            updateList.RemoveRange(kept, updateList.Count - kept);
+            updateQueue.Pass();
         }
 
         // Returns false when the FSM has nothing to do until it is woken again.
         private static bool TickUpdate(Entry e)
         {
+            QueuedUpdate++;
             if (!e.Enabled)
                 return false;
             PlayMakerFSM fsm = e.Component;
@@ -291,23 +408,14 @@ namespace PlayMakerTurbo
 
         private static void LateUpdateQueued()
         {
-            int kept = 0;
-            for (int i = 0; i < lateList.Count; i++)
-            {
-                Entry e = lateList[i];
-                QueuedLate++;
-                if (TickLate(e))
-                    lateList[kept++] = e;
-                else
-                    e.InLate = false;
-            }
-            lateList.RemoveRange(kept, lateList.Count - kept);
+            lateQueue.Pass();
         }
 
         // Dropping on a no-op is safe because only a wake can make LateUpdate do something again: the active actions
         // only shrink until ActivateActions runs, and a pending state switch is resolved inside the FSM's own tick.
         private static bool TickLate(Entry e)
         {
+            QueuedLate++;
             if (!e.Enabled)
                 return false;
             PlayMakerFSM fsm = e.Component;

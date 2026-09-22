@@ -31,6 +31,10 @@ namespace PlayMakerTurbo
         // the original only if the camera or a collider moves between two picks inside the same frame.
         public static bool MousePickFrameCache = false;
 
+        // Debugging aid, off by default: every event sent to a GameObject also walks FsmList the original way and
+        // logs where the two lists of receivers differ.
+        public static bool ValidateEventRouting = false;
+
         // Set by MWCFsmProfiler while recording: Active computes both variants and counts differences.
         public static bool ValidateActive;
         public static long ActiveChecks;

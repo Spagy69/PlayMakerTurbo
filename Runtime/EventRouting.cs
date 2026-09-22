@@ -127,8 +127,56 @@ namespace PlayMakerTurbo
             }
         }
 
+        private const int MaxMismatchLogs = 30;
+        private static int mismatchLogs;
+        private static readonly List<PlayMakerFSM> expected = new List<PlayMakerFSM>();
+
+        // Core.ValidateEventRouting: compares Collect with the original walk over FsmList.
+        private static void Validate(GameObject go, List<PlayMakerFSM> result, string what)
+        {
+            expected.Clear();
+            foreach (PlayMakerFSM fsm in PlayMakerFSM.FsmList)
+            {
+                if (fsm != null && fsm.gameObject == go)
+                    expected.Add(fsm);
+            }
+            bool same = expected.Count == result.Count;
+            for (int i = 0; same && i < expected.Count; i++)
+                same = ReferenceEquals(expected[i], result[i]);
+            if (same || mismatchLogs >= MaxMismatchLogs)
+                return;
+            mismatchLogs++;
+            Debug.Log("PlayMakerTurbo: event routing differs (" + what + ") on '" + Path(go) + "': original [" + Names(expected) + "], Turbo [" + Names(result) + "]");
+        }
+
+        private static string Names(List<PlayMakerFSM> list)
+        {
+            string text = "";
+            for (int i = 0; i < list.Count; i++)
+            {
+                FsmTicker.Entry e = list[i].turboEntry as FsmTicker.Entry;
+                text += (i > 0 ? ", " : "") + list[i].FsmName + (e == null ? " (no entry)" : " (enabled " + e.Enabled + ", seq " + e.EnableSeq + ")");
+            }
+            return text;
+        }
+
+        private static string Path(GameObject go)
+        {
+            string path = go.name;
+            for (Transform t = go.transform.parent; t != null; t = t.parent)
+                path = t.name + "/" + path;
+            return path;
+        }
+
         // The GameObject's PlayMakerFSMs that are in PlayMakerFSM.FsmList, in FsmList order.
         private static void Collect(GameObject go, List<PlayMakerFSM> result)
+        {
+            CollectFast(go, result);
+            if (Core.ValidateEventRouting)
+                Validate(go, result, "collect");
+        }
+
+        private static void CollectFast(GameObject go, List<PlayMakerFSM> result)
         {
             go.GetComponents(onObject);
             for (int i = 0; i < onObject.Count; i++)
