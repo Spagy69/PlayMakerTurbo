@@ -51,6 +51,7 @@
   <ItemGroup>
     <Compile Include="ActionPatches.cs" />
     <Compile Include="Core.cs" />
+    <Compile Include="EventRouting.cs" />
     <Compile Include="PropertyAccess.cs" />
     <Compile Include="StaticField.cs" />
     <Compile Include="FsmTicker.cs" />

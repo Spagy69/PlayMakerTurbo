@@ -23,6 +23,8 @@ namespace PlayMakerTurbo
         public static bool CInputAxisInvertedBuilder = true;
         // The ticker walks only FSMs that were woken since they last had nothing to do, instead of all of them.
         public static bool ActiveLists = true;
+        // Sending an event to the FSMs of one GameObject looks at that GameObject instead of walking every FSM.
+        public static bool FastEventRouting = true;
         // Profiler found 44 mismatches in 1.49M checks, so this stays off: not identical to the original.
         public static bool ActiveFast = false;
         // Almost identical, off by default: reuses this frame's mouse-pick raycast per layer mask. Differs from

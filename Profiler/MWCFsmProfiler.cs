@@ -26,7 +26,7 @@ namespace MWCFsmProfiler
         {
             "IdleUpdateSkip", "LateUpdateSkip", "FixedUpdateSkip", "DelayedEventsEarlyOut", "GameObjectCache",
             "SkipNonUpdatingActions", "MousePickSingleCameraLookup", "MousePickFrameCache", "PropertyDelegates",
-            "SetGameVolumeSkipUnchanged", "CInputAxisInvertedBuilder", "ActiveLists", "ActiveFast"
+            "SetGameVolumeSkipUnchanged", "CInputAxisInvertedBuilder", "ActiveLists", "FastEventRouting", "ActiveFast"
         };
 
         private SettingsKeybind fullKey, lightKey, traceKey, overlayKey, benchKey;

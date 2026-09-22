@@ -162,6 +162,18 @@ namespace PlayMakerTurboInstaller
             Forward(GetMethod(fsmState, "OnUpdate"), StaticCall(core, "StateOnUpdate", module.TypeSystem.Void, fsmState));
             Forward(GetMethod(helpers, "DoMousePick", 2), StaticCall(core, "DoMousePick", module.TypeSystem.Void, module.TypeSystem.Single, module.TypeSystem.Int32));
 
+            // Event routing to the FSMs of one GameObject, see EventRouting. Originals kept for the switch.
+            TypeReference routing = new TypeReference(TurboAssembly, "EventRouting", module, turbo);
+            TypeDefinition fsmEvent = GetType(module, "HutongGames.PlayMaker.FsmEvent");
+            TypeDefinition fsmEventData = GetType(module, "HutongGames.PlayMaker.FsmEventData");
+            MakePublic(GetMethod(fsm, "GetEventDataSentByInfo"));
+            ReplaceWithArgs(fsm, GetMethod(fsm, "BroadcastEventToGameObject", "GameObject", "FsmEvent", "FsmEventData", "Boolean", "Boolean"),
+                "TurboOriginalBroadcastEventToGameObject", StaticCall(routing, "BroadcastToGameObject", module.TypeSystem.Void, fsm, gameObject, fsmEvent, fsmEventData, module.TypeSystem.Boolean, module.TypeSystem.Boolean));
+            ReplaceWithArgs(fsm, GetMethod(fsm, "SendEventToFsmOnGameObject", "GameObject", "String", "FsmEvent"),
+                "TurboOriginalSendEventToFsmOnGameObject", StaticCall(routing, "SendToFsmOnGameObject", module.TypeSystem.Void, fsm, gameObject, module.TypeSystem.String, fsmEvent));
+            ReplaceWithArgs(fsm, GetMethod(fsm, "BroadcastEvent", "FsmEvent", "Boolean"),
+                "TurboOriginalBroadcastEvent", StaticCall(routing, "Broadcast", module.TypeSystem.Void, fsm, fsmEvent, module.TypeSystem.Boolean));
+
             // if (Core.DelayedEventsEarlyOut && delayedEvents.Count == 0) return;
             MethodDefinition updateDelayed = GetMethod(fsm, "UpdateDelayedEvents");
             FieldDefinition delayedEvents = GetField(fsm, "delayedEvents");
@@ -194,6 +206,16 @@ namespace PlayMakerTurboInstaller
             MethodDefinition method = type.Methods.FirstOrDefault(m => m.Name == name && m.Parameters.Count == paramCount);
             if (method == null)
                 throw new InvalidOperationException("Method not found: " + type.Name + "." + name);
+            return method;
+        }
+
+        // An overload picked by its parameter type names.
+        private static MethodDefinition GetMethod(TypeDefinition type, string name, params string[] parameterTypes)
+        {
+            MethodDefinition method = type.Methods.FirstOrDefault(m => m.Name == name
+                && m.Parameters.Select(p => p.ParameterType.Name).SequenceEqual(parameterTypes));
+            if (method == null)
+                throw new InvalidOperationException("Method not found: " + type.Name + "." + name + "(" + string.Join(", ", parameterTypes) + ")");
             return method;
         }
 
@@ -323,6 +345,62 @@ namespace PlayMakerTurboInstaller
             il.Append(il.Create(OpCodes.Call, target));
             il.Append(il.Create(OpCodes.Ret));
             type.Methods.Add(replacement);
+            RedirectCalls(type.Module, original, replacement);
+        }
+
+        // Like ReplaceKeepingOriginal, for an instance method with parameters: the new method keeps the name,
+        // signature and parameter defaults and calls target(this, args...).
+        private static void ReplaceWithArgs(TypeDefinition type, MethodDefinition original, string originalName, MethodReference target)
+        {
+            MethodDefinition replacement = new MethodDefinition(original.Name, original.Attributes, original.ReturnType);
+            foreach (ParameterDefinition p in original.Parameters)
+            {
+                ParameterDefinition copy = new ParameterDefinition(p.Name, p.Attributes, p.ParameterType);
+                if (p.HasConstant)
+                    copy.Constant = p.Constant;
+                replacement.Parameters.Add(copy);
+            }
+            original.Name = originalName;
+            MakePublic(original);
+
+            ILProcessor il = replacement.Body.GetILProcessor();
+            il.Append(il.Create(OpCodes.Ldarg_0));
+            foreach (ParameterDefinition p in replacement.Parameters)
+                il.Append(il.Create(OpCodes.Ldarg, p));
+            il.Append(il.Create(OpCodes.Call, target));
+            il.Append(il.Create(OpCodes.Ret));
+            type.Methods.Add(replacement);
+            RedirectCalls(type.Module, original, replacement);
+        }
+
+        // Callers in other assemblies bind by name and reach the replacement on their own, but inside this module
+        // a call holds the MethodDefinition itself, which now is the renamed original. Point those calls (including
+        // the original's calls to itself) at the replacement, so they take the same path as outside callers.
+        private static void RedirectCalls(ModuleDefinition module, MethodDefinition original, MethodDefinition replacement)
+        {
+            foreach (TypeDefinition type in AllTypes(module.Types))
+            {
+                foreach (MethodDefinition method in type.Methods)
+                {
+                    if (method == replacement || !method.HasBody)
+                        continue;
+                    foreach (Instruction instruction in method.Body.Instructions)
+                    {
+                        if (instruction.Operand == original)
+                            instruction.Operand = replacement;
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<TypeDefinition> AllTypes(IEnumerable<TypeDefinition> types)
+        {
+            foreach (TypeDefinition type in types)
+            {
+                yield return type;
+                foreach (TypeDefinition nested in AllTypes(type.NestedTypes))
+                    yield return nested;
+            }
         }
 
         private static void MarkDirtyOnEnter(TypeDefinition fsmState, FieldDefinition dirty)

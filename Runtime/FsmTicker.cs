@@ -30,6 +30,7 @@ namespace PlayMakerTurbo
         private static readonly List<Entry> updateList = new List<Entry>(2048);
         private static readonly List<Entry> lateList = new List<Entry>(2048);
         private static int frameNo;
+        private static long enableCounter;
         private const int SweepInterval = 300;
         private const int MaxMissedLogs = 20;
 
@@ -61,6 +62,7 @@ namespace PlayMakerTurbo
             public bool InLate;
             public int UpdateFrame = -1;
             public int LateFrame = -1;
+            public long EnableSeq;   // order of the last enable = order in PlayMakerFSM.FsmList
         }
 
         // Called by the patched PlayMakerFSM.OnEnable.
@@ -99,6 +101,7 @@ namespace PlayMakerTurbo
             Ensure();
             Entry e = GetEntry(component);
             e.Enabled = true;
+            e.EnableSeq = ++enableCounter;
             Queue(e);
         }
 

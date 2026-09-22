@@ -90,6 +90,8 @@ PropertyDelegates=1
 CInputAxisInvertedBuilder=1
 # Tick only FSMs that were woken (state entered, enabled, delayed event) instead of walking all of them
 ActiveLists=1
+# Send events to the FSMs of one GameObject without walking all FSMs
+FastEventRouting=1
 # Fsm.Active through isActiveAndEnabled. LEAVE OFF: not identical to the original.
 ActiveFast=0
 
