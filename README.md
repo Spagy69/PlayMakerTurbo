@@ -47,7 +47,7 @@ Things that can go wrong, and what to do about them:
 - The game does not start or freezes while loading. Press Restore original game in the installer.
 - Something in the world stops working: a door does not open, an item cannot be picked up, a car part does
   not react. Turn the options in `PlayMakerTurbo.ini` off one by one until it works again, then report which
-  option it was.
+  option it was in [Issues](https://github.com/Spagy69/PlayMakerTurbo/issues).
 - The game updated and now crashes. Run the installer again, it patches the new `PlayMaker.dll`.
 
 If a save got damaged, restoring the game files does not repair it. Only your backup does.
