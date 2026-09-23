@@ -60,7 +60,7 @@ tolerance of where the solver would put them. In a recording with the fix, about
 skipped and the IK took 0.26 ms per frame.
 
 This is the only fix that is not bit identical to the original. A solver with a collider under its joints would
-always run, because moving a collider can wake a car's rigidbody; the game has none.
+always run, because moving a collider can wake a car's rigidbody; no solver in the game has one.
 
 ### Mass recomputed on every physics step
 
@@ -82,8 +82,8 @@ Open Mods, then PlayMaker Turbo Addon, then Settings.
 Addon fixes has the four checkboxes above. They are read once when the game loads, because a Harmony patch
 cannot be taken back while the game runs, so a change applies after a restart.
 
-PlayMaker Turbo shows every switch from `PlayMakerTurbo.ini` with a short description. The ini stays the source
-of truth, because Turbo reads it when the game starts and people also edit it by hand. The checkboxes are set
+PlayMaker Turbo shows every switch from `PlayMakerTurbo.ini` with a short description;
+[Settings](../docs/settings.md) explains each one. The ini stays the source of truth, because Turbo reads it when the game starts and people also edit it by hand. The checkboxes are set
 from the file when the settings load, and a click writes the one changed line back, leaving the comments alone.
 Turbo picks the change up at the next start. Reset all settings to default in MSCLoader does not reset these,
 because they are read from the ini again right after. If Turbo is not installed, this part only says so.
@@ -102,7 +102,8 @@ an error.
 
 ## Building
 
-`build.ps1` in the repository root builds the addon along with everything else and puts it into `dist\Addon`.
+`build.ps1` in the repository root builds the addon along with everything else and puts it into `dist\Addon`;
+see [Building from source](../docs/building.md).
 The project references `UnityEngine.dll`, `MSCLoader.dll`, `Assembly-CSharp.dll`, `cInput.dll` and
 `0Harmony.dll` from the game's `Managed` folder. If the environment variable `MWCMODSFOLDER` points at the
 game's `Mods` folder, every build also copies the DLL there.

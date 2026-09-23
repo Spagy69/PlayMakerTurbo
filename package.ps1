@@ -3,9 +3,9 @@
 #   .\build.ps1
 #   .\package.ps1 -Version 1.2.0-beta
 #
-# players   Turbo installer + addon + PLAYERS.md as README.md
+# players   Turbo installer + addon + docs\players.md as README.md
 # full      everything in dist\
-# turbo     Turbo installer only
+# turbo     Turbo installer + README.md + docs\
 # addon     addon mod only
 # profiler  profiler mod only
 
@@ -47,7 +47,7 @@ function Map([string[]]$names) {
 }
 
 $players = Map ($turboFiles + $legal)
-$players['README.md'] = Join-Path $root 'PLAYERS.md'
+$players['README.md'] = Join-Path $root 'docs\players.md'
 $players['Addon\PlayMakerTurboAddon.dll'] = 'Addon\PlayMakerTurboAddon.dll'
 New-Package 'players' $players
 
@@ -57,6 +57,7 @@ New-Package 'full' $full
 
 $turbo = Map ($turboFiles + $legal)
 $turbo['README.md'] = 'README.md'
+foreach ($file in Get-ChildItem (Join-Path $dist 'docs') -File) { $turbo["docs\$($file.Name)"] = "docs\$($file.Name)" }
 New-Package 'turbo' $turbo
 
 New-Package 'addon' @{ 'PlayMakerTurboAddon.dll' = 'Addon\PlayMakerTurboAddon.dll'; 'README.md' = 'Addon\README.md'; 'LICENSE' = 'LICENSE' }

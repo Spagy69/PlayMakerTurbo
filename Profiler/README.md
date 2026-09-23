@@ -1,7 +1,7 @@
 # FSM Profiler
 
 An MSCLoader mod that measures where the time and the managed allocations of a frame go in My Winter Car.
-It is the tool every number in the PlayMaker Turbo README was measured with. It works with or without Turbo
+Apart from the `fpstest` FPS, every number in the PlayMaker Turbo documentation was measured with it. It works with or without Turbo
 installed; with Turbo it also reads Turbo's own counters and can switch Turbo's options for benchmarks.
 
 It is an instrumenting profiler. It wraps game methods with Harmony patches that take a timestamp and a heap

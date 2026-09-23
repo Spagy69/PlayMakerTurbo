@@ -72,7 +72,10 @@ foreach ($name in 'PlayMakerTurbo Installer.exe', 'PlayMakerTurbo Installer.exe.
     Copy-Item (Join-Path $installerDir $name) $dist -Force
 }
 Copy-Item (Join-Path $root 'Runtime\bin\Release\PlayMakerTurbo.dll') $dist -Force
-foreach ($name in 'README.md', 'PLAYERS.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') { Copy-Item (Join-Path $root $name) $dist -Force }
+foreach ($name in 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md') { Copy-Item (Join-Path $root $name) $dist -Force }
+$docsDist = Join-Path $dist 'docs'
+New-Item -ItemType Directory $docsDist -Force | Out-Null
+Copy-Item (Join-Path $root 'docs\*.md') $docsDist -Force
 $profilerDist = Join-Path $dist 'Profiler'
 New-Item -ItemType Directory $profilerDist -Force | Out-Null
 Copy-Item (Join-Path $root 'Profiler\bin\Release\MWCFsmProfiler.dll') $profilerDist -Force
