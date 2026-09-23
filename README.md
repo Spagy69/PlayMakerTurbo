@@ -89,35 +89,59 @@ gave about 8 FPS in testing and is worth turning on. Leave `ActiveFast` off.
 
 ## Measured results
 
-These numbers were taken with Turbo 1.1, before `ActiveLists`, `FastEventRouting`, `LightTicks` and the addon
-existed. A new benchmark with all of them will follow.
+Measured with the profiler's benchmark (F12) on version 1.2.0-beta, at one spot in the house, 1920x1080, quality
+Golden Eye with 200 m shadows, no mods except MSCLoader, the profiler and, in the Turbo sessions, the addon. The
+benchmark freezes the player, game time, weather and traffic, warms up for 5 seconds and then measures twenty
+10 second blocks. Each column is a separate start of the game from the same save.
 
-They come from the `fpstest` console command of the Better FPS mod and from the profiler, at the same spot in the
-world.
-
-| | Stock game | Turbo 1.1 | Turbo 1.1 with the mouse pick cache |
+| | Original game | Turbo + addon, default settings | Turbo + addon, mouse pick cache on |
 |---|---|---|---|
-| `fpstest` Vanilla | 88.5 FPS | 108.3 FPS | 116.9 FPS |
-| FSM time measured inside C# | 4.79 ms/frame | 3.51 ms | 2.40 ms |
-| Mouse pick raycasts | 203 per frame | 203 | 17 |
-| Managed allocations | 17.9 KB/frame | | 12.4 KB/frame |
-| Garbage collections | 1.4 per minute | | 0.8 per minute |
+| Average frame | 13.86 ms (72 FPS) | 8.00 ms (125 FPS) | 7.45 ms (134 FPS) |
+| p99 frame | 28.4 ms | 11.2 ms | 10.8 ms |
+| 1% low | 33 FPS | 85 FPS | 89 FPS |
+| Managed allocations | 11.1 KB/frame | 3.2 KB/frame | 3.0 KB/frame |
 
-The profiler's A/B benchmark switches one option off and on in 10 second blocks while the player, game time,
-weather and traffic are frozen. It puts the mouse pick cache at 0.87 ms per frame (95% interval 0.85 to
-0.90 ms), about 105 to 116 FPS at that spot.
+Against the original, the default settings save 5.87 ms per frame (95% interval 5.64 to 6.10 ms) and the
+settings with the mouse pick cache 6.41 ms (6.19 to 6.63 ms). How much you gain elsewhere depends on your
+computer and on how much is going on around you.
 
-Profiler measurements of the newer parts:
+Within one session, the A/B benchmark switches one option off and on in blocks and compares neighbouring blocks,
+so slow drift cancels out. With everything else on:
+
+| Option | Gain per frame | 95% interval |
+|---|---|---|
+| `LateUpdateSkip` | 1.05 ms | 0.84 to 1.27 |
+| `MousePickFrameCache` | 0.77 ms | 0.73 to 0.82 |
+| `IdleUpdateSkip` | 0.43 ms | 0.39 to 0.46 |
+| `ActiveLists` | 0.40 ms | 0.34 to 0.47 |
+| `PropertyDelegates` | 0.18 ms | 0.03 to 0.33 |
+| `GameObjectCache` | 0.11 ms | 0.06 to 0.16 |
+| `CInputAxisInvertedBuilder` | 0.09 ms | 0.07 to 0.11 |
+| `DelayedEventsEarlyOut` | 0.07 ms | 0.02 to 0.11 |
+| `FixedUpdateSkip` | 0.06 ms | 0.04 to 0.09 |
+| `MousePickSingleCameraLookup` | 0.04 ms | 0.00 to 0.08 |
+| `SetGameVolumeSkipUnchanged` | in noise | -0.06 to 0.03 |
+| `FastEventRouting` | in noise | -0.04 to 0.04 |
+| `SkipNonUpdatingActions` | about zero | -0.09 to 0.00, and -0.04 to 0.11 in a second run |
+| `LightTicks` | about zero | -0.10 to 0.00, and 0.04 to 0.14 in a second run with the cache off |
+
+A method check that switches nothing (A/A) came out at 0.001 ms (-0.037 to 0.039 ms).
+
+The gains do not add up to the total, for two reasons. Each option was measured with all the others on, and
+the largest single part of Turbo has no switch: the ticker, which calls the FSMs from one managed loop instead
+of letting Unity call about 2000 components from native code in every update phase.
+
+`FastEventRouting` speeds up single events, which the frozen benchmark hardly sends. The profiler measured it,
+and the addon's fixes, on the events and calls themselves:
 
 | Change | Before | After |
 |---|---|---|
-| `LateUpdate` loop with `ActiveLists` | 0.51 ms/frame | 0.09 ms/frame |
-| PlayMaker's own time with `LightTicks` | 1.53 ms/frame | 0.70 ms/frame |
 | Light switch on a car dashboard with `FastEventRouting` | 530 µs, 18 KB garbage | 80 µs, no garbage |
 | First time in a car, addon force feedback fix | 185 ms freeze | 0.12 ms |
 | `CarDynamics.FixedUpdate`, addon centre of mass fix | 48 µs per call | 1.3 µs per call |
 | Suspension IK, addon parked IK fix | 0.57 ms/frame | 0.26 ms/frame |
 
+The profiler writes the same tables on any computer, see [Profiler](Profiler/README.md#benchmark-f12).
 ## What Turbo does not do
 
 It does not disable distant objects or their FSMs the way MOP or NOP do. That changes how the game behaves and
@@ -128,7 +152,7 @@ which at about 400 MB takes around 140 ms. Turbo only lowers the allocation rate
 often. Of what is left, about 2 KB per frame are `Collision` objects that Unity creates before every
 `OnCollisionStay` call, which Unity 5 cannot reuse.
 
-It does not speed up rendering, which the profiler puts at about 4.5 ms of an 11.6 ms frame. Shadow distance is
+It does not speed up rendering, which the profiler puts at about 2.7 ms of a 9.4 ms frame with my graphics mods. Shadow distance is
 the setting that moves that number the most.
 
 ## Documentation

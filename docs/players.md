@@ -4,9 +4,9 @@ PlayMaker Turbo makes My Winter Car run faster. Most of the game's logic runs on
 part cheaper without changing what the game does. The addon in this zip also removes the short freeze when you
 first get into a car.
 
-How much you gain depends on your computer and on where you are in the world. On the test computer, the
-`fpstest` command of the Better FPS mod went from 88 to 108 FPS with version 1.1, and to 117 FPS with the mouse
-pick cache switched on.
+How much you gain depends on your computer and on where you are in the world. On the test computer, at one spot
+in the house with no other mods, the game went from 72 to 125 FPS, and to 134 FPS with the mouse pick cache
+switched on.
 
 > **Beta.** It has been tested on one computer. It can still crash the game or break some game logic, and in the
 > worst case damage your save. Back up your save first and keep the backup.
@@ -43,7 +43,7 @@ the lower part Turbo's options. Changes apply after you restart the game.
 
 With the defaults, the game logic works the same as in the original game, and the addon keeps the suspension of
 parked cars within 0.1 mm of the original. One option is off by default: "Share mouse pick raycast in a frame".
-It gave another 8 FPS in testing and is worth switching on. The
+It gave another 9 FPS in testing and is worth switching on. The
 [settings page on GitHub](https://github.com/Spagy69/PlayMakerTurbo/blob/main/docs/settings.md) explains every
 option.
 

@@ -13,27 +13,29 @@ one that caused it in [Issues](https://github.com/Spagy69/PlayMakerTurbo/issues)
 
 ## Overview
 
-| Switch | Default | Same result as the original | Checkbox in the addon |
-|---|---|---|---|
-| [`IdleUpdateSkip`](#idleupdateskip) | on | yes | Skip Update of FSMs that finished and wait for nothing |
-| [`LateUpdateSkip`](#lateupdateskip-and-fixedupdateskip) | on | yes | Skip LateUpdate when no active action uses it |
-| [`FixedUpdateSkip`](#lateupdateskip-and-fixedupdateskip) | on | yes | Skip FixedUpdate when no active action uses it |
-| [`DelayedEventsEarlyOut`](#delayedeventsearlyout) | on | yes | Return from delayed events right away when there are none |
-| [`GameObjectCache`](#gameobjectcache) | on | yes | Cache the FSM owner's GameObject |
-| [`SkipNonUpdatingActions`](#skipnonupdatingactions) | on | yes | Do not call actions that have no OnUpdate |
-| [`MousePickSingleCameraLookup`](#mousepicksinglecameralookup) | on | yes | Fetch Camera.main once per mouse pick instead of twice |
-| [`SetGameVolumeSkipUnchanged`](#setgamevolumeskipunchanged) | on | yes | Set the game volume only when it changes |
-| [`PropertyDelegates`](#propertydelegates) | on | yes | GetProperty / SetProperty without reflection (no garbage) |
-| [`CInputAxisInvertedBuilder`](#cinputaxisinvertedbuilder) | on | yes | cInput stores inverted axis settings only when they change |
-| [`ActiveLists`](#activelists) | on | yes | Tick only woken FSMs instead of walking all of them |
-| [`FastEventRouting`](#fasteventrouting) | on | yes | Send events to one GameObject without walking all FSMs |
-| [`LightTicks`](#lightticks) | on | yes | Light tick for FSMs that only wait (Wait, mouse over) |
-| [`MousePickFrameCache`](#mousepickframecache) | off | almost | Share mouse pick raycast in a frame (almost identical) |
-| [`ActiveFast`](#activefast) | off | no | Fsm.Active via isActiveAndEnabled (NOT identical) |
-| [`ValidateEventRouting`](#validateeventrouting) | off | yes, debugging only | none |
+| Switch | Default | Same result as the original | Measured gain per frame | Checkbox in the addon |
+|---|---|---|---|---|
+| [`IdleUpdateSkip`](#idleupdateskip) | on | yes | 0.43 ms | Skip Update of FSMs that finished and wait for nothing |
+| [`LateUpdateSkip`](#lateupdateskip-and-fixedupdateskip) | on | yes | 1.05 ms | Skip LateUpdate when no active action uses it |
+| [`FixedUpdateSkip`](#lateupdateskip-and-fixedupdateskip) | on | yes | 0.06 ms | Skip FixedUpdate when no active action uses it |
+| [`DelayedEventsEarlyOut`](#delayedeventsearlyout) | on | yes | 0.07 ms | Return from delayed events right away when there are none |
+| [`GameObjectCache`](#gameobjectcache) | on | yes | 0.11 ms | Cache the FSM owner's GameObject |
+| [`SkipNonUpdatingActions`](#skipnonupdatingactions) | on | yes | about zero | Do not call actions that have no OnUpdate |
+| [`MousePickSingleCameraLookup`](#mousepicksinglecameralookup) | on | yes | 0.04 ms | Fetch Camera.main once per mouse pick instead of twice |
+| [`SetGameVolumeSkipUnchanged`](#setgamevolumeskipunchanged) | on | yes | in noise | Set the game volume only when it changes |
+| [`PropertyDelegates`](#propertydelegates) | on | yes | 0.18 ms | GetProperty / SetProperty without reflection (no garbage) |
+| [`CInputAxisInvertedBuilder`](#cinputaxisinvertedbuilder) | on | yes | 0.09 ms | cInput stores inverted axis settings only when they change |
+| [`ActiveLists`](#activelists) | on | yes | 0.40 ms | Tick only woken FSMs instead of walking all of them |
+| [`FastEventRouting`](#fasteventrouting) | on | yes | per event, see below | Send events to one GameObject without walking all FSMs |
+| [`LightTicks`](#lightticks) | on | yes | about zero | Light tick for FSMs that only wait (Wait, mouse over) |
+| [`MousePickFrameCache`](#mousepickframecache) | off | almost | 0.77 ms | Share mouse pick raycast in a frame (almost identical) |
+| [`ActiveFast`](#activefast) | off | no | not measured | Fsm.Active via isActiveAndEnabled (NOT identical) |
+| [`ValidateEventRouting`](#validateeventrouting) | off | yes, debugging only | costs time | none |
 
-"Same result" means the game logic does the same thing in the same order as with stock PlayMaker. What each
-switch changes inside PlayMaker is explained in [How it works](how-it-works.md).
+"Same result" means the game logic does the same thing in the same order as with stock PlayMaker. The gains come
+from the profiler's A/B benchmark with all other switches on, see
+[Measured results](../README.md#measured-results). What each switch changes inside PlayMaker is explained in
+[How it works](how-it-works.md).
 
 ## The ticker
 
@@ -58,7 +60,8 @@ above say it has nothing to do. The queues keep the order of the full walk, see
 
 Measured without the profiler, the `LateUpdate` loop went from 0.51 to 0.09 ms per frame, walking 110 FSMs
 instead of 2080. The `Update` loop stayed at about 0.6 ms, because more than 1000 FSMs do real work there every
-frame. With `ActiveLists=0` the ticker walks every FSM and applies the skip rules to each.
+frame. The benchmark puts the whole switch at 0.40 ms per frame. With `ActiveLists=0` the ticker walks every FSM
+and applies the skip rules to each.
 
 Every 300 frames the ticker checks all FSMs against the queues. An FSM that has work but is not queued gets
 queued and reported in the log as a missed wake. Testing turned up none.
@@ -71,8 +74,10 @@ at an item, and many others that sit in a lone `Wait`. The ticker does just what
 hands over to the normal `Fsm.Update` as soon as anything more would happen. See
 [Light ticks](how-it-works.md#light-ticks-lightticks).
 
-In the profiler about 380 FSMs per frame took this path, and PlayMaker's own time fell from 1.53 to 0.70 ms per
-frame. If a game update changes `Wait` or `MousePickEvent`, light ticks switch themselves off and say so in the
+About 380 FSMs per frame take this path. In the profiler's timing that looked like a large saving, PlayMaker's
+own time falling from 1.53 to 0.70 ms per frame, but the profiler's probes also make every `Fsm.Update` more
+expensive. The benchmark, which runs without probes, puts light ticks at about zero: slightly worse with
+`MousePickFrameCache` on and 0.09 ms per frame better with it off. If a game update changes `Wait` or `MousePickEvent`, light ticks switch themselves off and say so in the
 log.
 
 ## PlayMaker internals
@@ -92,6 +97,9 @@ although a component never changes its GameObject.
 Does not call actions that do not override `OnUpdate`. The base method is empty, and `Init` would write the
 same three fields again. Actions that override `Init` are always called; the game has two, `AnimateFsmAction`
 and `CurveFsmAction`.
+
+Two benchmark runs put it at about zero, once slightly worse and once in noise. Checking whether an action has an
+`OnUpdate` seems to cost about as much as calling the empty method.
 
 ### FastEventRouting
 
@@ -153,8 +161,8 @@ about 40 µs. Turbo writes only when the axis states changed.
 Shares the mouse pick raycast within a frame, one result per layer mask. Stock PlayMaker caches it too, but for
 a single mask only, so `Use` FSMs with different masks keep overwriting each other's result.
 
-With the cache on, raycasts dropped from 203 to 17 per frame and `fpstest` gained about 8 FPS; the profiler's
-A/B benchmark put it at 0.87 ms per frame. The result differs from the original only when the camera or a
+With the cache on, raycasts dropped from 203 to 17 per frame. The benchmark puts it at 0.77 ms per frame, and at
+the test spot the game went from 125 to 134 FPS. The result differs from the original only when the camera or a
 collider moves between two picks inside one frame. Car part assembly, which picks while you move a part in
 front of the camera, worked normally with it on. It ships off because it is not bit identical, but it is worth
 turning on.

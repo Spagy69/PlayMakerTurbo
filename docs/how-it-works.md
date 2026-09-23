@@ -77,6 +77,9 @@ First it checks whether the `Update` would do anything more: a `Wait` that would
 `Wait` in real time, a `mouseOff` event, a pending event or state switch, an action of any other type. Any of
 those, or the mouse being over the object, sends the FSM through the normal `Fsm.Update` instead.
 
+Measured without the profiler, the saving came out at about zero, see [LightTicks](settings.md#lightticks). The
+profiler's probes had made `Fsm.Update` look more expensive than it is.
+
 The light tick reads the private `Wait.timer` field. If a game update renames it, light ticks switch themselves
 off and write that to the log.
 
